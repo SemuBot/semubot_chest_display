@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+chest_display.json
+chest_display.json.tmp
