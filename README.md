@@ -1,0 +1,2 @@
+# Bakalaureusetoo
+Bakalaureusetöö repository
