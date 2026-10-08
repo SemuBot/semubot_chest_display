@@ -9,7 +9,7 @@ COLOUR5 = "#97f8e6"
 SWIPE_DISTANCE = 300
 
 # Password to enter admin mode
-ADMIN_PASSWORD = "semubot26"
+ADMIN_PASSWORD = "1234"
 
 # General file path
 BASE_DIR = os.path.dirname(__file__)
