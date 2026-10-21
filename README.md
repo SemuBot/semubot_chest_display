@@ -68,6 +68,13 @@ Wayland compositors may control window placement themselves. On Wayland, set
 the monitor and startup rule in the compositor's configuration if the geometry
 setting does not place the window as requested.
 
+GNOME's own touchscreen gestures (three-finger swipe up opens the overview, edge swipes open
+the on-screen keyboard) get in the way of the display. Run `./install_disable_gestures.sh` once as
+the desktop user to install the `gnome-extension/` folder as the GNOME extension
+`disable-gestures@semubot`, which turns those gestures off. On Wayland it takes effect after the next
+login. Check it with `gnome-extensions info disable-gestures@semubot` (State: ACTIVE); undo it with
+`gnome-extensions disable disable-gestures@semubot`.
+
 Swipe upward at least 300 pixels on the display, enter the admin password, and
 choose **Muuda ekraani pilti**. The gallery has **Logod**, **Silmad**, **Suud**,
 and **Muud** tabs. **Lisa pilt** opens a file chooser and copies the image into
