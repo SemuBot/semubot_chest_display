@@ -16,6 +16,8 @@ from tkinter import colorchooser, filedialog, messagebox
 
 from PIL import Image, ImageTk
 
+from translations import translate
+
 import audio_control as audio
 import network_control as network
 from constants import ADMIN_PASSWORD, BACKGROUND_COLOR, BASE_DIR, COLOUR2, COLOUR5, LOGO_PATH, SWIPE_DISTANCE
@@ -380,22 +382,24 @@ class RobotRos:
             self.rclpy.shutdown()
 
 
-def cloud_usage_text(usage, period):
-    """Short Estonian summary of cloud LLM use, e.g. '12 päringut, ~0.045 $'."""
+def cloud_usage_text(usage, period, language="et"):
+    """Short localized summary of cloud LLM use, e.g. '12 päringut, ~0.045 $'."""
     if not isinstance(usage, dict) or not isinstance(usage.get(period), dict):
         return ""
     data = usage[period]
     requests = data.get("requests", 0)
     tokens = data.get("input_tokens", 0) + data.get("output_tokens", 0)
     tokens_text = f"{tokens:,}".replace(",", " ")
-    text = f"{requests} {'päring' if requests == 1 else 'päringut'}, {tokens_text} sõnet"
+    text = translate(language, "{requests} {request_word}, {tokens} sõnet",
+                     requests=requests, tokens=tokens_text,
+                     request_word=translate(language, "päring" if requests == 1 else "päringut"))
     if requests and data.get("unpriced", 0) < requests:
         cost = data.get("cost", 0.0)
         text += f", ~{cost:.3f} $" if cost < 1 else f", ~{cost:.2f} $"
         if data.get("unpriced"):
-            text += " (osaliselt hinnata)"
+            text += translate(language, " (osaliselt hinnata)")
     elif requests:
-        text += " (hind teadmata)"
+        text += translate(language, " (hind teadmata)")
     return text
 
 
@@ -423,6 +427,8 @@ def import_image(source, category="logos"):
 class ChestDisplayApp:
     def __init__(self, root, width, height):
         self.root = root
+        language = load_settings().get("menu_language", "et")
+        self.language = language if language in ("et", "en") else "et"
         self.width = width
         self.height = height
         self.ros = RobotRos()
@@ -438,12 +444,34 @@ class ChestDisplayApp:
         self.pending_image_category = "logos"
         self.speech_process = None
         self.speech_stopping = False
-        self.speech_status = "Vali käsk"
+        self.speech_status = self.tr('Vali käsk')
         self.speech_status_label = None
         self.speech_buttons = []
         self.speech_stop_button = None
         self.pending_speech_mode = None
         self.show_display()
+
+    def tr(self, text, **values):
+        return translate(self.language, text, **values)
+
+    def language_button(self, redraw):
+        self.button("English" if self.language == "et" else "Eesti",
+                    lambda: self.toggle_language(redraw),
+                    relx=1, x=-20, y=20, anchor="ne", width=190, height=55)
+
+    def toggle_language(self, redraw):
+        language = "en" if self.language == "et" else "et"
+        try:
+            save_setting("menu_language", language)
+        except OSError as error:
+            messagebox.showerror(self.tr("Salvestamine ebaõnnestus"),
+                                 str(error), parent=self.root)
+            return
+        self.language = language
+        # Speech commands may still be running while the menu is open.
+        if self.speech_process is None:
+            self.speech_status = self.tr("Vali käsk")
+        redraw()
 
     def close(self):
         if self.speech_process is not None and self.speech_process.poll() is None:
@@ -525,7 +553,7 @@ class ChestDisplayApp:
             self.photos.append(photo)
             self.canvas.create_image(width // 2, center_y, image=photo)
         except (OSError, ValueError):
-            self.canvas.create_text(width // 2, center_y, text="Pilti ei saa avada",
+            self.canvas.create_text(width // 2, center_y, text=self.tr('Pilti ei saa avada'),
                                     font=("Arial", 28), fill="black")
 
     def show_display(self):
@@ -552,8 +580,9 @@ class ChestDisplayApp:
 
     def show_login(self):
         self.clear()
-        self.title("Admin sisenemine")
-        self.button("← Tagasi", self.show_display, x=20, y=20, width=145, height=55)
+        self.title(self.tr('Admin sisenemine'))
+        self.language_button(self.show_login)
+        self.button(self.tr('← Tagasi'), self.show_display, x=20, y=20, width=145, height=55)
         entry = self.add(tk.Entry(self.root, font=("Arial", 25), show="*", justify="center"))
         entry.place(relx=0.5, rely=0.37, anchor="center", width=330, height=58)
         message = self.add(tk.Label(self.root, text="", font=("Arial", 17),
@@ -564,11 +593,11 @@ class ChestDisplayApp:
             if entry.get() == ADMIN_PASSWORD:
                 self.show_admin()
             else:
-                message.config(text="Vale parool")
+                message.config(text=self.tr('Vale parool'))
                 entry.delete(0, tk.END)
 
         entry.bind("<Return>", lambda _event: login())
-        self.button("Sisene", login, relx=0.5, rely=0.59, anchor="center",
+        self.button(self.tr('Sisene'), login, relx=0.5, rely=0.59, anchor="center",
                     width=180, height=65)
         keyboard = self.add(tk.Frame(self.root, bg=BACKGROUND_COLOR))
         keyboard.place(relx=0.5, rely=0.79, anchor="center")
@@ -579,21 +608,22 @@ class ChestDisplayApp:
                 tk.Button(line, text=character, font=("Arial", 15), width=3,
                           command=lambda value=character: entry.insert(tk.END, value)).pack(
                               side="left", padx=2, pady=2)
-        tk.Button(keyboard, text="⌫ Kustuta", font=("Arial", 14),
+        tk.Button(keyboard, text=self.tr('⌫ Kustuta'), font=("Arial", 14),
                   command=lambda: entry.delete(max(0, len(entry.get()) - 1), tk.END)).pack(pady=3)
         entry.focus_set()
 
     def show_admin(self):
         self.clear()
-        self.title("Admin menüü")
-        self.button("← Tagasi", self.show_display, x=20, y=20, width=145, height=55)
+        self.title(self.tr('Admin menüü'))
+        self.language_button(self.show_admin)
+        self.button(self.tr('← Tagasi'), self.show_display, x=20, y=20, width=145, height=55)
         buttons = (
-            ("Muuda ekraani pilti", self.show_gallery),
-            ("Muuda näo taustavärvi", self.show_face_colors),
-            ("Heli seaded", self.show_audio_settings),
-            ("Wi-Fi seaded", self.show_wifi_settings),
-            ("Kõne", self.show_speech),
-            ("Kõnerežiim", self.show_speech_mode),
+            (self.tr('Muuda ekraani pilti'), self.show_gallery),
+            (self.tr('Muuda näo taustavärvi'), self.show_face_colors),
+            (self.tr('Heli seaded'), self.show_audio_settings),
+            (self.tr('Wi-Fi seaded'), self.show_wifi_settings),
+            (self.tr('Kõne'), self.show_speech),
+            (self.tr('Kõnerežiim'), self.show_speech_mode),
         )
         for index, (label, command) in enumerate(buttons):
             self.button(label, command, relx=0.5, rely=0.25 + index * 0.122,
@@ -602,13 +632,13 @@ class ChestDisplayApp:
     def show_speech_mode(self):
         """Switch the robot between manual speech, local AI and cloud AI conversation."""
         self.clear()
-        self.title("Kõnerežiim")
-        self.button("← Tagasi", self.show_admin, x=20, y=20, width=145, height=55)
+        self.title(self.tr('Kõnerežiim'))
+        self.button(self.tr('← Tagasi'), self.show_admin, x=20, y=20, width=145, height=55)
         width = self.width
         buttons = {}
         for index, (mode, (label, _description)) in enumerate(SPEECH_MODES.items()):
             buttons[mode] = self.button(
-                label, lambda chosen=mode: self.select_speech_mode(chosen),
+                self.tr(label), lambda chosen=mode: self.select_speech_mode(chosen),
                 relx=0.2 + index * 0.3, rely=0.4, anchor="center",
                 width=min(260, width // 4), height=110)
         description = self.add(tk.Label(self.root, text="", font=("Arial", 17),
@@ -618,9 +648,9 @@ class ChestDisplayApp:
                                    bg=BACKGROUND_COLOR, wraplength=width - 80))
         status.place(relx=0.5, rely=0.75, anchor="center")
         bottom_height = min(55, int(self.height * 0.11))
-        for index, (label, command) in enumerate((("Hääl →", self.show_voice),
-                                                  ("Mikrofon →", self.show_microphone),
-                                                  ("Vestlus →", self.show_conversation))):
+        for index, (label, command) in enumerate(((self.tr('Hääl →'), self.show_voice),
+                                                  (self.tr('Mikrofon →'), self.show_microphone),
+                                                  (self.tr('Vestlus →'), self.show_conversation))):
             self.button(label, command, relx=0.2 + index * 0.3, rely=0.9, anchor="center",
                         width=min(240, width // 4), height=bottom_height)
         token = self.view_token
@@ -632,24 +662,24 @@ class ChestDisplayApp:
             if mode == self.pending_speech_mode:
                 self.pending_speech_mode = None
             for key, button in buttons.items():
-                label = SPEECH_MODES[key][0]
+                label = self.tr(SPEECH_MODES[key][0])
                 if key == mode:
                     button.config(text=f"✓ {label}", bg=COLOUR2)
                 elif key == self.pending_speech_mode:
-                    button.config(text=f"{label}\n(ootan...)", bg=COLOUR5)
+                    button.config(text=self.tr('{v0}\n(ootan...)', v0=label), bg=COLOUR5)
                 else:
                     button.config(text=label, bg=COLOUR5)
-            text = SPEECH_MODES[mode][1] if mode in SPEECH_MODES else ""
-            usage = cloud_usage_text(self.ros.cloud_usage, "today")
-            description.config(text=f"{text}\nPilve AI täna: {usage}" if usage else text)
+            text = self.tr(SPEECH_MODES[mode][1]) if mode in SPEECH_MODES else ""
+            usage = cloud_usage_text(self.ros.cloud_usage, "today", self.language)
+            description.config(text=self.tr('{v0}\nPilve AI täna: {v1}', v0=text, v1=usage) if usage else text)
             if self.ros.node is None:
-                text = f"ROS 2 pole saadaval: {self.ros.error}"
+                text = self.tr('ROS 2 pole saadaval: {v0}', v0=self.ros.error)
             elif self.ros.mode_error:
-                text = f"Režiimi saatmine ebaõnnestus: {self.ros.mode_error}"
+                text = self.tr('Režiimi saatmine ebaõnnestus: {v0}', v0=self.ros.mode_error)
             elif mode is None:
-                text = "Roboti kõnesüsteem ei vasta (semu_brain_node ei tööta?)"
+                text = self.tr('Roboti kõnesüsteem ei vasta (semu_brain_node ei tööta?)')
             else:
-                text = f"Robot on režiimis: {SPEECH_MODES.get(mode, (mode,))[0]}"
+                text = self.tr('Robot on režiimis: {v0}', v0=self.tr(SPEECH_MODES.get(mode, (mode,))[0]))
             status.config(text=text)
             self.root.after(500, refresh)
 
@@ -662,8 +692,8 @@ class ChestDisplayApp:
     def show_voice(self):
         """Choose the robot's TTS voice and speaking speed."""
         self.clear()
-        self.title("Robotihääl")
-        self.button("← Tagasi", self.show_speech_mode, x=20, y=20, width=145, height=55)
+        self.title(self.tr('Robotihääl'))
+        self.button(self.tr('← Tagasi'), self.show_speech_mode, x=20, y=20, width=145, height=55)
         width, height = self.width, self.height
         grid = self.add(tk.Frame(self.root, bg=BACKGROUND_COLOR))
         grid.place(relx=0.5, rely=0.36, anchor="center")
@@ -672,7 +702,7 @@ class ChestDisplayApp:
             self.root, from_=0.5, to=2.0, resolution=0.05, orient="horizontal",
             variable=speed, length=min(600, width - 120), width=30, sliderlength=50,
             font=("Arial", 14), bg=BACKGROUND_COLOR, highlightthickness=0,
-            label="Kiirus (1.0 = tavaline)"))
+            label=self.tr('Kiirus (1.0 = tavaline)')))
         slider.place(relx=0.5, rely=0.67, anchor="center")
         status = self.add(tk.Label(self.root, text="", font=("Arial", 15),
                                    bg=BACKGROUND_COLOR, wraplength=width - 60))
@@ -680,10 +710,10 @@ class ChestDisplayApp:
         state = {"dragging": False, "message": "", "speakers": None, "buttons": {}}
 
         def sent(ok, text):
-            state["message"] = text if ok else "Saatmine ebaõnnestus"
+            state["message"] = text if ok else self.tr('Saatmine ebaõnnestus')
 
         def choose(speaker):
-            sent(self.ros.publish_tts_settings(speaker=speaker), f"Hääl: {speaker}")
+            sent(self.ros.publish_tts_settings(speaker=speaker), self.tr('Hääl: {v0}', v0=speaker))
 
         def press(_event):
             state["dragging"] = True
@@ -691,15 +721,15 @@ class ChestDisplayApp:
         def release(_event):
             state["dragging"] = False
             sent(self.ros.publish_tts_settings(speed=round(speed.get(), 2)),
-                 f"Kiirus: {speed.get():.2f}")
+                 self.tr('Kiirus: {v0:.2f}', v0=speed.get()))
 
         slider.bind("<ButtonPress-1>", press)
         slider.bind("<ButtonRelease-1>", release)
 
         def try_voice():
-            sent(self.ros.say(VOICE_SAMPLE), "Robot ütleb näidislause...")
+            sent(self.ros.say(VOICE_SAMPLE), self.tr('Robot ütleb näidislause...'))
 
-        self.button("Proovi", try_voice, relx=0.5, rely=0.84, anchor="center",
+        self.button(self.tr('Proovi'), try_voice, relx=0.5, rely=0.84, anchor="center",
                     width=200, height=min(55, int(height * 0.11)))
         token = self.view_token
         columns = 5
@@ -729,13 +759,13 @@ class ChestDisplayApp:
                 if abs(speed.get() - settings["speed"]) > 0.001:
                     speed.set(settings["speed"])
             if self.ros.node is None:
-                text = f"ROS 2 pole saadaval: {self.ros.error}"
+                text = self.tr('ROS 2 pole saadaval: {v0}', v0=self.ros.error)
             elif not settings:
-                text = "Roboti kõnesüsteem ei vasta (semu_brain_node ei tööta?)"
+                text = self.tr('Roboti kõnesüsteem ei vasta (semu_brain_node ei tööta?)')
             elif not speakers:
-                text = "Häälte loendit ei saadud (kas TTS teenus töötab?)"
+                text = self.tr('Häälte loendit ei saadud (kas TTS teenus töötab?)')
             else:
-                text = state["message"] or "Vali hääl ja kiirus. Proovi ütleb näidislause."
+                text = state["message"] or self.tr('Vali hääl ja kiirus. Proovi ütleb näidislause.')
             status.config(text=text)
             self.root.after(300, refresh)
 
@@ -744,8 +774,8 @@ class ChestDisplayApp:
     def show_conversation(self):
         """Live log of what the robot heard and said (kept by the robot in memory only)."""
         self.clear()
-        self.title("Vestlus")
-        self.button("← Tagasi", self.show_speech_mode, x=20, y=20, width=145, height=55)
+        self.title(self.tr('Vestlus'))
+        self.button(self.tr('← Tagasi'), self.show_speech_mode, x=20, y=20, width=145, height=55)
         width, height = self.width, self.height
         frame = self.add(tk.Frame(self.root, bg=BACKGROUND_COLOR))
         stage_top = int(height * 0.12) + 30  # below the title
@@ -771,9 +801,9 @@ class ChestDisplayApp:
 
         def clear_log():
             if not self.ros.clear_conversation_log():
-                usage_label.config(text="Logi tühjendamine ebaõnnestus")
+                usage_label.config(text=self.tr('Logi tühjendamine ebaõnnestus'))
 
-        self.button("Tühjenda", clear_log, relx=1, x=-20, y=20, anchor="ne", width=145, height=55)
+        self.button(self.tr('Tühjenda'), clear_log, relx=1, x=-20, y=20, anchor="ne", width=145, height=55)
         token = self.view_token
 
         def refresh():
@@ -789,16 +819,16 @@ class ChestDisplayApp:
                 text.config(state="normal")
                 text.delete("1.0", "end")
                 if self.ros.node is None:
-                    text.insert("end", f"ROS 2 pole saadaval: {self.ros.error}")
+                    text.insert("end", self.tr('ROS 2 pole saadaval: {v0}', v0=self.ros.error))
                 elif entries is None:
-                    text.insert("end", "Roboti kõnesüsteem ei vasta (semu_brain_node ei tööta?)")
+                    text.insert("end", self.tr('Roboti kõnesüsteem ei vasta (semu_brain_node ei tööta?)'))
                 elif not entries:
-                    text.insert("end", "Vestlus on tühi. Siia ilmub, mida robot kuuleb ja ütleb.")
+                    text.insert("end", self.tr('Vestlus on tühi. Siia ilmub, mida robot kuuleb ja ütleb.'))
                 for entry in entries or []:
                     prefix, _color = LOG_LABELS.get(entry.get("kind"), ("?", "black"))
                     stamp = datetime.datetime.fromtimestamp(entry.get("time", 0)).strftime("%H:%M:%S")
                     text.insert("end", f"{stamp}  ", "time")
-                    text.insert("end", f"{prefix}: " if entry.get("kind") != "info" else "— ",
+                    text.insert("end", f"{self.tr(prefix)}: " if entry.get("kind") != "info" else "— ",
                                 entry.get("kind"))
                     text.insert("end", f"{entry.get('text', '')}\n")
                     if entry.get("details"):
@@ -808,16 +838,16 @@ class ChestDisplayApp:
             robot = self.ros.robot_state or {}
             stage_text, stage_color = STAGES.get(robot.get("stage"), ("", "black"))
             if stage_text:
-                mode_name = SPEECH_MODES.get(robot.get("mode"), ("",))[0]
+                mode_name = self.tr(SPEECH_MODES.get(robot.get("mode"), ("",))[0])
                 seconds = max(0, int(time.time() - robot.get("since", time.time())))
-                stage_label.config(text=f"{stage_text.format(mode=mode_name)}  ({seconds} s)",
+                stage_label.config(text=f"{self.tr(stage_text, mode=mode_name)}  ({seconds} s)",
                                    fg=stage_color)
             else:
-                stage_label.config(text="Olek teadmata", fg="#555555")
-            today = cloud_usage_text(self.ros.cloud_usage, "today")
-            month = cloud_usage_text(self.ros.cloud_usage, "month")
+                stage_label.config(text=self.tr('Olek teadmata'), fg="#555555")
+            today = cloud_usage_text(self.ros.cloud_usage, "today", self.language)
+            month = cloud_usage_text(self.ros.cloud_usage, "month", self.language)
             if today:
-                usage_label.config(text=f"Pilve AI täna: {today} · see kuu: {month}")
+                usage_label.config(text=self.tr('Pilve AI täna: {v0} · see kuu: {v1}', v0=today, v1=month))
             self.root.after(500, refresh)
 
         refresh()
@@ -825,8 +855,8 @@ class ChestDisplayApp:
     def show_microphone(self):
         """Live microphone level and the loudness threshold the robot reacts to."""
         self.clear()
-        self.title("Mikrofoni tundlikkus")
-        self.button("← Tagasi", self.show_speech_mode, x=20, y=20, width=145, height=55)
+        self.title(self.tr('Mikrofoni tundlikkus'))
+        self.button(self.tr('← Tagasi'), self.show_speech_mode, x=20, y=20, width=145, height=55)
         width, height = self.width, self.height
         meter_width = width - 120
         meter = self.add(tk.Canvas(self.root, width=meter_width, height=56, bg="white",
@@ -840,7 +870,7 @@ class ChestDisplayApp:
             self.root, from_=0, to=LEVEL_METER_MAX, resolution=50, orient="horizontal",
             variable=threshold, length=meter_width, width=34, sliderlength=50,
             font=("Arial", 14), bg=BACKGROUND_COLOR, highlightthickness=0,
-            label="Lävi: vaiksemaid hääli ei kuulata"))
+            label=self.tr('Lävi: vaiksemaid hääli ei kuulata')))
         slider.place(relx=0.5, rely=0.6, anchor="center")
         status = self.add(tk.Label(self.root, text="", font=("Arial", 15),
                                    bg=BACKGROUND_COLOR, wraplength=width - 60))
@@ -849,9 +879,9 @@ class ChestDisplayApp:
 
         def send(value):
             if self.ros.publish_vad_threshold(value):
-                state["message"] = f"Lävi saadetud: {value:.0f}"
+                state["message"] = self.tr('Lävi saadetud: {v0:.0f}', v0=value)
             else:
-                state["message"] = "Läve saatmine ebaõnnestus"
+                state["message"] = self.tr('Läve saatmine ebaõnnestus')
 
         def press(_event):
             state["dragging"] = True
@@ -865,10 +895,9 @@ class ChestDisplayApp:
 
         def calibrate():
             state["calibrate_until"] = time.monotonic() + CALIBRATION_SECONDS
-            state["message"] = (f"Räägi {CALIBRATION_SECONDS} sekundit tavalise häälega "
-                                "sealt, kus inimesed robotiga räägivad...")
+            state["message"] = (self.tr('Räägi {v0} sekundit tavalise häälega sealt, kus inimesed robotiga räägivad...', v0=CALIBRATION_SECONDS))
 
-        self.button("Kalibreeri", calibrate, relx=0.5, rely=0.79, anchor="center",
+        self.button(self.tr('Kalibreeri'), calibrate, relx=0.5, rely=0.79, anchor="center",
                     width=220, height=min(55, int(height * 0.11)))
         token = self.view_token
 
@@ -894,17 +923,17 @@ class ChestDisplayApp:
             background = sorted(r for r, p in recent if p < 0.5)
             speech = [r for r, p in recent if p >= 0.5]
             if self.ros.node is None:
-                readout.config(text=f"ROS 2 pole saadaval: {self.ros.error}")
+                readout.config(text=self.tr('ROS 2 pole saadaval: {v0}', v0=self.ros.error))
             elif not levels:
-                readout.config(text="Mikrofoni andmeid ei tule (semu_brain_node ei tööta?)")
+                readout.config(text=self.tr('Mikrofoni andmeid ei tule (semu_brain_node ei tööta?)'))
             else:
-                parts = [f"Helitase {rms:.0f}",
-                         "KÕNE" if voice and rms >= gate else
-                         "hääl, aga vaiksem kui lävi" if voice else "kõnet pole"]
+                parts = [self.tr('Helitase {v0:.0f}', v0=rms),
+                         self.tr('KÕNE') if voice and rms >= gate else
+                         self.tr('hääl, aga vaiksem kui lävi') if voice else self.tr('kõnet pole')]
                 if background:
-                    parts.append(f"taust ~{background[len(background) // 2]:.0f}")
+                    parts.append(self.tr('taust ~{v0:.0f}', v0=background[len(background) // 2]))
                 if speech:
-                    parts.append(f"kõne kuni {max(speech):.0f}")
+                    parts.append(self.tr('kõne kuni {v0:.0f}', v0=max(speech)))
                 readout.config(text=" · ".join(parts))
             if state["calibrate_until"] is not None and time.monotonic() >= state["calibrate_until"]:
                 state["calibrate_until"] = None
@@ -913,21 +942,19 @@ class ChestDisplayApp:
                     value = round(voiced[len(voiced) // 2] * 0.5 / 50) * 50
                     threshold.set(value)
                     send(value)
-                    state["message"] = (f"Kalibreeritud: lävi {value:.0f} "
-                                        "(pool tavalise kõne helitasemest)")
+                    state["message"] = (self.tr('Kalibreeritud: lävi {v0:.0f} (pool tavalise kõne helitasemest)', v0=value))
                 else:
-                    state["message"] = "Kõnet ei tuvastatud, proovi uuesti lähemalt."
+                    state["message"] = self.tr('Kõnet ei tuvastatud, proovi uuesti lähemalt.')
             status.config(text=state["message"] or
-                          "Roheline = robot kuulab. Kollane = hääl on liiga vaikne. "
-                          "Punane joon = lävi.")
+                          self.tr('Roheline = robot kuulab. Kollane = hääl on liiga vaikne. Punane joon = lävi.'))
             self.root.after(100, refresh)
 
         refresh()
 
     def show_speech(self):
         self.clear()
-        self.title("Kõne")
-        self.button("← Tagasi", self.show_admin, x=20, y=20, width=145, height=55)
+        self.title(self.tr('Kõne'))
+        self.button(self.tr('← Tagasi'), self.show_admin, x=20, y=20, width=145, height=55)
         width = self.width
         button_width = min(260, width // 3)
         self.speech_buttons = [
@@ -939,7 +966,7 @@ class ChestDisplayApp:
                         width=button_width, height=110),
         ]
         self.speech_stop_button = self.button(
-            "Peata", self.stop_speech, relx=0.5, rely=0.7,
+            self.tr('Peata'), self.stop_speech, relx=0.5, rely=0.7,
             anchor="center", width=180, height=55)
         self.speech_status_label = self.add(tk.Label(
             self.root, text=self.speech_status, font=("Arial", 17),
@@ -959,7 +986,7 @@ class ChestDisplayApp:
 
     def start_speech(self, command):
         if self.speech_process is not None and self.speech_process.poll() is None:
-            self.speech_status = "Kõnekäsk juba töötab"
+            self.speech_status = self.tr('Kõnekäsk juba töötab')
             self.refresh_speech_controls()
             return
         try:
@@ -967,16 +994,16 @@ class ChestDisplayApp:
                 command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except FileNotFoundError:
             self.speech_process = None
-            self.speech_status = f"Käsku {command[0]} ei leitud. Kontrolli PATH keskkonnamuutujat."
+            self.speech_status = self.tr('Käsku {v0} ei leitud. Kontrolli PATH keskkonnamuutujat.', v0=command[0])
             self.refresh_speech_controls()
             return
         except OSError as error:
             self.speech_process = None
-            self.speech_status = f"Käsu käivitamine ebaõnnestus: {error}"
+            self.speech_status = self.tr('Käsu käivitamine ebaõnnestus: {v0}', v0=error)
             self.refresh_speech_controls()
             return
         self.speech_stopping = False
-        self.speech_status = f"Käivitatud: {' '.join(command)}"
+        self.speech_status = self.tr('Käivitatud: {v0}', v0=' '.join(command))
         self.refresh_speech_controls()
         process = self.speech_process
         self.root.after(250, lambda: self.poll_speech(process))
@@ -989,9 +1016,9 @@ class ChestDisplayApp:
             self.root.after(250, lambda: self.poll_speech(process))
             return
         self.speech_status = (
-            "Kõnekäsk peatatud" if self.speech_stopping else
-            "Kõnekäsk lõpetas" if code == 0 else
-            f"Kõnekäsk lõpetas veakoodiga {code}")
+            self.tr('Kõnekäsk peatatud') if self.speech_stopping else
+            self.tr('Kõnekäsk lõpetas') if code == 0 else
+            self.tr('Kõnekäsk lõpetas veakoodiga {v0}', v0=code))
         self.speech_process = None
         self.speech_stopping = False
         self.refresh_speech_controls()
@@ -1000,14 +1027,14 @@ class ChestDisplayApp:
         if self.speech_process is not None and self.speech_process.poll() is None:
             self.speech_process.terminate()
             self.speech_stopping = True
-            self.speech_status = "Peatan kõnekäsku..."
+            self.speech_status = self.tr('Peatan kõnekäsku...')
             self.refresh_speech_controls()
 
     def show_audio_settings(self):
         self.clear()
-        self.title("Heli seaded")
-        self.button("← Tagasi", self.show_admin, x=20, y=20, width=145, height=55)
-        self.button("Värskenda", self.show_audio_settings, relx=1, x=-20, y=20,
+        self.title(self.tr('Heli seaded'))
+        self.button(self.tr('← Tagasi'), self.show_admin, x=20, y=20, width=145, height=55)
+        self.button(self.tr('Värskenda'), self.show_audio_settings, relx=1, x=-20, y=20,
                     anchor="ne", width=145, height=55)
         width = self.width
         height = self.height
@@ -1022,14 +1049,14 @@ class ChestDisplayApp:
             current = audio.default_output()
             volume = audio.volume_percent()
         except audio.AudioError as error:
-            status.config(text=f"Heliteenus pole saadaval: {error}")
+            status.config(text=self.tr('Heliteenus pole saadaval: {v0}', v0=error))
             return False
 
         if not outputs:
-            status.config(text="Heliväljundeid ei leitud")
+            status.config(text=self.tr('Heliväljundeid ei leitud'))
             return False
 
-        label = self.add(tk.Label(self.root, text=f"Helitugevus: {volume}%",
+        label = self.add(tk.Label(self.root, text=self.tr('Helitugevus: {v0}%', v0=volume),
                                   font=("Arial", 21, "bold"), bg=BACKGROUND_COLOR))
         label.place(relx=0.5, rely=0.25, anchor="center")
         slider = self.add(tk.Scale(self.root, from_=0, to=100, orient="horizontal",
@@ -1041,23 +1068,23 @@ class ChestDisplayApp:
         def apply_volume():
             try:
                 audio.set_volume_percent(slider.get())
-                label.config(text=f"Helitugevus: {slider.get()}%")
-                status.config(text="Helitugevus muudetud")
+                label.config(text=self.tr('Helitugevus: {v0}%', v0=slider.get()))
+                status.config(text=self.tr('Helitugevus muudetud'))
             except (audio.AudioError, ValueError) as error:
-                status.config(text=f"Helitugevuse muutmine ebaõnnestus: {error}")
+                status.config(text=self.tr('Helitugevuse muutmine ebaõnnestus: {v0}', v0=error))
 
-        self.button("Rakenda helitugevus", apply_volume, relx=0.5, rely=0.48,
+        self.button(self.tr('Rakenda helitugevus'), apply_volume, relx=0.5, rely=0.48,
                     anchor="center", width=260, height=55)
 
         def test_sound():
-            status.config(text="Mängin testheli...")
+            status.config(text=self.tr('Mängin testheli...'))
             self.run_background(audio.play_test_sound, lambda _value, error: status.config(
-                text=f"Testheli ebaõnnestus: {error}" if error else "Testheli mängitud"))
+                text=self.tr('Testheli ebaõnnestus: {v0}', v0=error) if error else self.tr('Testheli mängitud')))
 
-        self.button("Testheli", test_sound, relx=0.82, rely=0.48,
+        self.button(self.tr('Testheli'), test_sound, relx=0.82, rely=0.48,
                     anchor="center", width=150, height=55)
 
-        device_label = self.add(tk.Label(self.root, text="Heliväljund", font=("Arial", 21, "bold"),
+        device_label = self.add(tk.Label(self.root, text=self.tr('Heliväljund'), font=("Arial", 21, "bold"),
                                          bg=BACKGROUND_COLOR))
         device_label.place(relx=0.5, rely=0.59, anchor="center")
         frame = self.add(tk.Frame(self.root, bg=BACKGROUND_COLOR))
@@ -1078,33 +1105,33 @@ class ChestDisplayApp:
         def apply_output():
             selection = devices.curselection()
             if not selection:
-                status.config(text="Vali loendist heliväljund")
+                status.config(text=self.tr('Vali loendist heliväljund'))
                 return
             name, description = outputs[selection[0]]
             try:
                 audio.set_default_output(name)
             except (audio.AudioError, ValueError) as error:
-                status.config(text=f"Heliväljundi muutmine ebaõnnestus: {error}")
+                status.config(text=self.tr('Heliväljundi muutmine ebaõnnestus: {v0}', v0=error))
                 return
             if self.show_audio_settings():
-                self.audio_status.config(text=f"Heliväljund: {description}")
+                self.audio_status.config(text=self.tr('Heliväljund: {v0}', v0=description))
 
-        self.button("Vali heliväljund", apply_output, relx=0.5, rely=0.88,
+        self.button(self.tr('Vali heliväljund'), apply_output, relx=0.5, rely=0.88,
                     anchor="center", width=260, height=55)
         return True
 
     def show_wifi_settings(self, notice=None):
         self.clear()
-        self.title("Wi-Fi seaded")
-        self.button("← Tagasi", self.show_admin, x=20, y=20, width=145, height=55)
-        self.button("Värskenda", self.show_wifi_settings, relx=1, x=-20, y=20,
+        self.title(self.tr('Wi-Fi seaded'))
+        self.button(self.tr('← Tagasi'), self.show_admin, x=20, y=20, width=145, height=55)
+        self.button(self.tr('Värskenda'), self.show_wifi_settings, relx=1, x=-20, y=20,
                     anchor="ne", width=145, height=55)
         width = self.width
         height = self.height
-        current = self.add(tk.Label(self.root, text="Ühendus: skannin...",
+        current = self.add(tk.Label(self.root, text=self.tr('Ühendus: skannin...'),
                                     font=("Arial", 18, "bold"), bg=BACKGROUND_COLOR))
         current.place(relx=0.5, rely=0.23, anchor="center")
-        address = self.add(tk.Label(self.root, text="IPv4: otsin...", font=("Arial", 16),
+        address = self.add(tk.Label(self.root, text=self.tr('IPv4: otsin...'), font=("Arial", 16),
                                     bg=BACKGROUND_COLOR, wraplength=width - 80))
         address.place(relx=0.5, rely=0.32, anchor="center")
         frame = self.add(tk.Frame(self.root, bg=BACKGROUND_COLOR))
@@ -1116,7 +1143,7 @@ class ChestDisplayApp:
         scrollbar.config(command=choices.yview)
         scrollbar.pack(side="right", fill="y")
         choices.pack(side="left", fill="both", expand=True)
-        status = self.add(tk.Label(self.root, text="Skannin võrke...", font=("Arial", 15),
+        status = self.add(tk.Label(self.root, text=self.tr('Skannin võrke...'), font=("Arial", 15),
                                    bg=BACKGROUND_COLOR, wraplength=width - 80))
         status.place(relx=0.5, rely=0.96, anchor="center")
         networks = []
@@ -1135,54 +1162,54 @@ class ChestDisplayApp:
         def scan_finished(result, error):
             nonlocal networks
             if error:
-                status.config(text=f"Võrkude otsimine ebaõnnestus: {error}")
+                status.config(text=self.tr('Võrkude otsimine ebaõnnestus: {v0}', v0=error))
                 return
             networks, scan_error, addresses, address_error = result
             active = next((item.ssid for item in networks if item.active), None)
-            current.config(text=f"Ühendus: {active or 'puudub'}")
+            current.config(text=self.tr('Ühendus: {v0}', v0=active or self.tr('puudub')))
             if address_error:
-                address.config(text=f"IPv4: ei saa lugeda ({address_error})")
+                address.config(text=self.tr('IPv4: ei saa lugeda ({v0})', v0=address_error))
             elif addresses:
                 address.config(text="IPv4: " + "; ".join(
                     f"{device} {ip}" for device, ip in addresses))
             else:
-                address.config(text="IPv4: aadress puudub")
+                address.config(text=self.tr('IPv4: aadress puudub'))
             for item in networks:
                 lock = "" if item.security in ("", "--") else "🔒 "
                 choices.insert("end", f"{'● ' if item.active else '   '}{lock}{item.ssid}  ({item.signal}%)")
             if scan_error:
-                status.config(text=f"Wi-Fi pole saadaval: {scan_error}")
+                status.config(text=self.tr('Wi-Fi pole saadaval: {v0}', v0=scan_error))
             elif notice:
                 status.config(text=notice)
             elif not networks:
-                status.config(text="Wi-Fi võrke ei leitud")
+                status.config(text=self.tr('Wi-Fi võrke ei leitud'))
             else:
-                status.config(text="Vali võrk ja vajuta Ühenda")
+                status.config(text=self.tr('Vali võrk ja vajuta Ühenda'))
 
         self.run_background(scan, scan_finished)
 
         def connect_selected():
             selection = choices.curselection()
             if not selection or selection[0] >= len(networks):
-                status.config(text="Vali loendist Wi-Fi võrk")
+                status.config(text=self.tr('Vali loendist Wi-Fi võrk'))
                 return
             selected = networks[selection[0]]
             if selected.active:
-                status.config(text="See Wi-Fi võrk on juba ühendatud")
+                status.config(text=self.tr('See Wi-Fi võrk on juba ühendatud'))
             elif "802.1X" in selected.security:
-                status.config(text="See ettevõtte Wi-Fi võrk vajab eraldi konto seadistust")
+                status.config(text=self.tr('See ettevõtte Wi-Fi võrk vajab eraldi konto seadistust'))
             elif selected.security in ("", "--"):
                 self.connect_wifi(selected.ssid, "", status, connect_button)
             else:
                 self.show_wifi_password(selected.ssid)
 
-        connect_button = self.button("Ühenda", connect_selected, relx=0.5, rely=0.88,
+        connect_button = self.button(self.tr('Ühenda'), connect_selected, relx=0.5, rely=0.88,
                                      anchor="center", width=180, height=55)
 
     def show_wifi_password(self, ssid):
         self.clear()
-        self.title("Wi-Fi parool")
-        self.button("← Tagasi", self.show_wifi_settings, x=20, y=20, width=145, height=55)
+        self.title(self.tr('Wi-Fi parool'))
+        self.button(self.tr('← Tagasi'), self.show_wifi_settings, x=20, y=20, width=145, height=55)
         width = self.width
         name = self.add(tk.Label(self.root, text=ssid, font=("Arial", 18, "bold"),
                                  bg=BACKGROUND_COLOR, wraplength=width - 80))
@@ -1191,7 +1218,7 @@ class ChestDisplayApp:
         entry.place(relx=0.5, rely=0.3, anchor="center", width=min(480, width - 100), height=48)
         visible = tk.BooleanVar(value=False)
         toggle = self.add(tk.Checkbutton(
-            self.root, text="Näita parooli", variable=visible, font=("Arial", 14),
+            self.root, text=self.tr('Näita parooli'), variable=visible, font=("Arial", 14),
             bg=BACKGROUND_COLOR,
             command=lambda: entry.config(show="" if visible.get() else "*"),
         ))
@@ -1224,9 +1251,9 @@ class ChestDisplayApp:
 
             tk.Button(controls, text="⇧ Shift", font=("Arial", 13),
                       command=lambda: switch("shift")).pack(side="left", padx=4)
-            tk.Button(controls, text="Sümbolid", font=("Arial", 13),
+            tk.Button(controls, text=self.tr('Sümbolid'), font=("Arial", 13),
                       command=lambda: switch("symbols")).pack(side="left", padx=4)
-            tk.Button(controls, text="Tühik", font=("Arial", 13),
+            tk.Button(controls, text=self.tr('Tühik'), font=("Arial", 13),
                       command=lambda: entry.insert(tk.END, " ")).pack(side="left", padx=4)
             tk.Button(controls, text="⌫", font=("Arial", 13),
                       command=lambda: entry.delete(max(0, len(entry.get()) - 1), tk.END)).pack(
@@ -1237,32 +1264,32 @@ class ChestDisplayApp:
                                    bg=BACKGROUND_COLOR, wraplength=width - 80))
         status.place(relx=0.5, rely=0.96, anchor="center")
         connect_button = self.button(
-            "Ühenda", lambda: self.connect_wifi(ssid, entry.get(), status, connect_button),
+            self.tr('Ühenda'), lambda: self.connect_wifi(ssid, entry.get(), status, connect_button),
             relx=0.5, rely=0.88, anchor="center", width=180, height=55)
         entry.focus_set()
 
     def connect_wifi(self, ssid, password, status, button):
         button.config(state="disabled")
-        status.config(text="Ühendan Wi-Fi võrguga...")
+        status.config(text=self.tr('Ühendan Wi-Fi võrguga...'))
 
         def finished(_result, error):
             if error:
-                status.config(text=f"Ühendamine ebaõnnestus: {error}")
+                status.config(text=self.tr('Ühendamine ebaõnnestus: {v0}', v0=error))
                 button.config(state="normal")
             else:
-                self.show_wifi_settings(notice=f"Ühendatud: {ssid}")
+                self.show_wifi_settings(notice=self.tr('Ühendatud: {v0}', v0=ssid))
 
         self.run_background(lambda: network.connect_wifi(ssid, password), finished)
 
     def show_face_colors(self):
         self.clear(preserve_face_preview=True)
-        self.title("Näo taustavärv")
-        self.button("← Tagasi", self.show_admin, x=20, y=20, width=145, height=55)
+        self.title(self.tr('Näo taustavärv'))
+        self.button(self.tr('← Tagasi'), self.show_admin, x=20, y=20, width=145, height=55)
         current = self.pending_face_color or selected_face_color()
         width = self.width
         height = self.height
         channels = [int(current[index:index + 2], 16) for index in (1, 3, 5)]
-        caption = "Eelvaade" if self.pending_face_color else "Salvestatud"
+        caption = self.tr('Eelvaade') if self.pending_face_color else self.tr('Salvestatud')
         preview = self.add(tk.Label(self.root, text=f"{caption}: {current}",
                                     font=("Arial", 17, "bold"), bg=current,
                                     fg="black" if sum(channels) > 380 else "white",
@@ -1271,7 +1298,7 @@ class ChestDisplayApp:
         for index, (name, color) in enumerate(FACE_COLORS.items()):
             row, column = divmod(index, 3)
             button = self.add(tk.Button(
-                self.root, text=f"{'✓ ' if color == current else ''}{name}",
+                self.root, text=f"{'✓ ' if color == current else ''}{self.tr(name)}",
                 font=("Arial", 19, "bold"), bg=color,
                 fg="white" if color == FACE_COLORS["Tume"] else "black",
                 command=lambda chosen=color: self.select_face_color(chosen),
@@ -1280,22 +1307,22 @@ class ChestDisplayApp:
             button.place(x=int(width * (0.25 + 0.25 * column)),
                          y=int(height * (0.38 + 0.3 * row)),
                          anchor="center", width=width // 5, height=height // 5)
-        self.button("Muu värv...", self.choose_face_color,
+        self.button(self.tr('Muu värv...'), self.choose_face_color,
                     relx=0.82, rely=0.23, anchor="center", width=170, height=50)
-        save_button = self.button("Salvesta", self.save_face_color,
+        save_button = self.button(self.tr('Salvesta'), self.save_face_color,
                                   relx=0.4, rely=0.84, anchor="center", width=180, height=55)
-        undo_button = self.button("Võta tagasi", self.undo_face_color,
+        undo_button = self.button(self.tr('Võta tagasi'), self.undo_face_color,
                                   relx=0.6, rely=0.84, anchor="center", width=180, height=55)
         if self.pending_face_color is None:
             save_button.config(state="disabled")
             undo_button.config(state="disabled")
-        status = "Vali värv eelvaateks. Muudatus salvestub alles pärast Salvesta vajutamist."
+        status = self.tr('Vali värv eelvaateks. Muudatus salvestub alles pärast Salvesta vajutamist.')
         if self.pending_face_color is not None:
-            status = "Eelvaade on näo ekraanil. Salvesta või võta tagasi."
+            status = self.tr('Eelvaade on näo ekraanil. Salvesta või võta tagasi.')
         if self.ros.node is None:
-            status = "ROS 2 pole saadaval; eelvaade on ainult siin. Salvesta jätab värvi järgmise käivituse jaoks."
+            status = self.tr('ROS 2 pole saadaval; eelvaade on ainult siin. Salvesta jätab värvi järgmise käivituse jaoks.')
         elif self.ros.error:
-            status = f"Värvi saatmine ebaõnnestus: {self.ros.error}"
+            status = self.tr('Värvi saatmine ebaõnnestus: {v0}', v0=self.ros.error)
         label = self.add(tk.Label(self.root, text=status, font=("Arial", 15),
                                   bg=BACKGROUND_COLOR, fg="black", wraplength=width - 60))
         label.place(relx=0.5, rely=0.95, anchor="center")
@@ -1320,7 +1347,7 @@ class ChestDisplayApp:
         try:
             save_setting("face_background_color", self.pending_face_color)
         except OSError as error:
-            messagebox.showerror("Salvestamine ebaõnnestus", str(error), parent=self.root)
+            messagebox.showerror(self.tr('Salvestamine ebaõnnestus'), str(error), parent=self.root)
             return
         self.pending_face_color = None
         self.show_face_colors()
@@ -1334,15 +1361,15 @@ class ChestDisplayApp:
 
     def show_gallery(self, category="logos"):
         self.clear()
-        self.title("Vali rinnaekraani pilt")
-        self.button("← Tagasi", self.show_admin, x=20, y=20, width=145, height=55)
-        self.button("Lisa pilt", lambda: self.choose_file(category), relx=1, x=-20, y=20,
+        self.title(self.tr('Vali rinnaekraani pilt'))
+        self.button(self.tr('← Tagasi'), self.show_admin, x=20, y=20, width=145, height=55)
+        self.button(self.tr('Lisa pilt'), lambda: self.choose_file(category), relx=1, x=-20, y=20,
                     anchor="ne", width=145, height=55)
 
         tabs = self.add(tk.Frame(self.root, bg=BACKGROUND_COLOR))
         tabs.place(relx=0.5, y=115, anchor="center")
         for key, label in IMAGE_CATEGORIES.items():
-            tk.Button(tabs, text=label, font=("Arial", 16, "bold"),
+            tk.Button(tabs, text=self.tr(label), font=("Arial", 16, "bold"),
                       bg=COLOUR2 if key == category else COLOUR5,
                       command=lambda chosen=key: self.show_gallery(chosen),
                       width=10).pack(side="left", padx=6)
@@ -1365,7 +1392,7 @@ class ChestDisplayApp:
         images = available_images(category)
         if not images:
             scroller.create_text(25, 30, anchor="nw",
-                                 text=f"Selles kaustas pole pilte. Lisa pilt kausta images/{category}/.",
+                                 text=self.tr('Selles kaustas pole pilte. Lisa pilt kausta images/{v0}/.', v0=category),
                                  font=("Arial", 17), fill="black")
         for index, (label, path) in enumerate(images.items()):
             card = tk.Frame(grid, bg=BACKGROUND_COLOR)
@@ -1396,19 +1423,19 @@ class ChestDisplayApp:
             self.show_gallery(self.pending_image_category)
             return
         self.clear(preserve_image_preview=True)
-        self.title("Rinnaekraani eelvaade")
+        self.title(self.tr('Rinnaekraani eelvaade'))
         width = self.width
         height = self.height
         self.draw_image(self.pending_image, int(width * 0.8), int(height * 0.55),
                         int(height * 0.47))
         label = self.add(tk.Label(
-            self.root, text=f"{os.path.basename(self.pending_image)} — salvesta või võta tagasi",
+            self.root, text=self.tr('{v0} — salvesta või võta tagasi', v0=os.path.basename(self.pending_image)),
             font=("Arial", 17), bg=BACKGROUND_COLOR, wraplength=width - 80,
         ))
         label.place(relx=0.5, rely=0.76, anchor="center")
-        self.button("Salvesta", self.save_image_preview, relx=0.4, rely=0.88,
+        self.button(self.tr('Salvesta'), self.save_image_preview, relx=0.4, rely=0.88,
                     anchor="center", width=180, height=60)
-        self.button("Võta tagasi", self.undo_image_preview, relx=0.6, rely=0.88,
+        self.button(self.tr('Võta tagasi'), self.undo_image_preview, relx=0.6, rely=0.88,
                     anchor="center", width=180, height=60)
 
     def save_image_preview(self):
@@ -1417,7 +1444,7 @@ class ChestDisplayApp:
         try:
             save_selected_image(self.pending_image)
         except (OSError, ValueError) as error:
-            messagebox.showerror("Salvestamine ebaõnnestus", str(error), parent=self.root)
+            messagebox.showerror(self.tr('Salvestamine ebaõnnestus'), str(error), parent=self.root)
             return
         self.pending_image = None
         self.show_display()
@@ -1429,14 +1456,14 @@ class ChestDisplayApp:
 
     def choose_file(self, category):
         source = filedialog.askopenfilename(
-            title="Vali pilt", filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp")],
+            title=self.tr('Vali pilt'), filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp")],
         )
         if source:
             try:
                 path = import_image(source, category)
                 self.select_image(path, category)
             except (OSError, ValueError) as error:
-                messagebox.showerror("Pildi lisamine ebaõnnestus", str(error))
+                messagebox.showerror(self.tr('Pildi lisamine ebaõnnestus'), str(error))
 
 
 def start_gui():

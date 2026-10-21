@@ -4,6 +4,16 @@ Run `python3 main.py` to show the selected chest image in a borderless window.
 Python needs Tkinter and Pillow (`pip install Pillow`). The SemuBot logo is the
 default image.
 
+## Menu language
+
+Swipe upward to open the admin login screen. Tap **English** in the upper right
+to switch the menu to English; tap **Eesti** to return to Estonian. The same
+button is available in the admin menu. The selected language is saved as
+`menu_language` (`et` or `en`) in `chest_display.json` and restored at startup.
+The default is Estonian. This setting changes the menu labels and status text;
+robot speech, conversation contents, network names, and image names keep their
+original language.
+
 ## Start on the chest monitor at login
 
 The app needs a graphical desktop session. On the Ubuntu robot, first run
