@@ -63,10 +63,18 @@ def test_menu_language():
             for show in (app.show_speech_mode, app.show_voice, app.show_conversation,
                          app.show_microphone, app.show_speech, app.show_face_colors,
                          app.show_gallery, lambda: app.show_wifi_password('My network'),
-                         app.show_audio_settings, app.show_wifi_settings):
+                         app.show_audio_settings, app.show_wifi_settings, app.show_speed):
                 show()
                 root.update_idletasks()
                 assert '← Back' in texts(root)
+            app.show_speed()
+            for _ in range(3):
+                button(root, '−').invoke()
+            assert ui.selected_speed_scale() == 0.7 and '0.7' in texts(root)
+            for _ in range(5):
+                button(root, '+').invoke()
+            assert ui.selected_speed_scale() == 1.0 and button(root, '+').cget('state') == 'disabled'
+            ros.publish_speed_scale.assert_called_with(1.0)
             app.show_admin()
             button(root, 'Eesti').invoke()
             assert app.language == 'et' and 'Admin menüü' in texts(root)

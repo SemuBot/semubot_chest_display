@@ -54,6 +54,7 @@ CONVERSATION_LOG_TOPIC = "/semubot/conversation_log"  # JSON list, latched, memo
 CONVERSATION_LOG_CLEAR_TOPIC = "/semubot/conversation_log_clear"
 CLOUD_USAGE_TOPIC = "/semubot/cloud_usage"  # JSON {"today": {...}, "month": {...}, ...}
 ROBOT_STATE_TOPIC = "/semubot/state"  # JSON {"stage", "mode", "since"}, latched
+SPEED_SCALE_TOPIC = "/semubot/speed_scale"  # Float32 0.1-1.0, latched, multiplies /cmd_vel on the Pi
 STAGES = {  # stage: (text, colour)
     "manual": ("⏸ Käsitsi režiim – ei kuula", "#555555"),
     "listening": ("● Kuulan", "#2e9d4f"),
@@ -157,6 +158,14 @@ def selected_face_color():
     return DEFAULT_FACE_COLOR
 
 
+def selected_speed_scale():
+    try:
+        scale = float(load_settings().get("speed_scale", 1.0))
+    except (TypeError, ValueError):
+        return 1.0
+    return min(max(round(scale, 1), 0.1), 1.0)
+
+
 def available_images(category=None):
     """Return image labels and paths that can be selected in the admin screen."""
     if category is not None and category not in IMAGE_CATEGORIES:
@@ -232,6 +241,7 @@ class RobotRos:
             qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                              reliability=ReliabilityPolicy.RELIABLE)
             self.publisher = node.create_publisher(String, FACE_COLOR_TOPIC, qos)
+            self.speed_publisher = node.create_publisher(Float32, SPEED_SCALE_TOPIC, qos)
             self.mode_publisher = node.create_publisher(String, SPEECH_MODE_TOPIC, 10)
             node.create_subscription(String, SPEECH_MODE_STATE_TOPIC, self._speech_mode_state, qos)
             self.float_type = Float32
@@ -253,6 +263,7 @@ class RobotRos:
             self.node = node  # Only now: the screens treat a node as "ROS ready"
             self.error = None
             self.publish(selected_face_color())
+            self.publish_speed_scale(selected_speed_scale())
         except Exception as error:
             self.error = f"{error} (proovin {ROS_RETRY_SECONDS} s pärast uuesti)"
             if self.executor is not None:
@@ -347,6 +358,17 @@ class RobotRos:
             return True
         except Exception as error:
             self.mode_error = str(error)
+            return False
+
+    def publish_speed_scale(self, scale):
+        if self.node is None:
+            return False
+        try:
+            self.speed_publisher.publish(self.float_type(data=float(scale)))
+            self.error = None
+            return True
+        except Exception as error:
+            self.error = str(error)
             return False
 
     def publish(self, color):
@@ -624,10 +646,47 @@ class ChestDisplayApp:
             (self.tr('Wi-Fi seaded'), self.show_wifi_settings),
             (self.tr('Kõne'), self.show_speech),
             (self.tr('Kõnerežiim'), self.show_speech_mode),
+            (self.tr('Sõidukiirus'), self.show_speed),
         )
         for index, (label, command) in enumerate(buttons):
-            self.button(label, command, relx=0.5, rely=0.25 + index * 0.122,
-                        anchor="center", width=320, height=min(60, int(self.height * 0.115)))
+            self.button(label, command, relx=0.5, rely=0.24 + index * 0.105,
+                        anchor="center", width=320, height=min(60, int(self.height * 0.095)))
+
+    def show_speed(self):
+        """Scale the wheelbase's /cmd_vel speed in 0.1 steps between 0.1 and 1.0."""
+        self.clear()
+        self.title(self.tr('Sõidukiirus'))
+        self.button(self.tr('← Tagasi'), self.show_admin, x=20, y=20, width=145, height=55)
+        value = self.add(tk.Label(self.root, text="", font=("Arial", 48, "bold"),
+                                  bg=BACKGROUND_COLOR))
+        value.place(relx=0.5, rely=0.45, anchor="center")
+        status = self.add(tk.Label(self.root, text="", font=("Arial", 17),
+                                   bg=BACKGROUND_COLOR, wraplength=self.width - 80))
+        status.place(relx=0.5, rely=0.72, anchor="center")
+
+        def change(step):
+            scale = min(max(round(selected_speed_scale() + step, 1), 0.1), 1.0)
+            try:
+                save_setting("speed_scale", scale)
+            except OSError as error:
+                messagebox.showerror(self.tr("Salvestamine ebaõnnestus"), str(error), parent=self.root)
+                return
+            show(scale, self.ros.publish_speed_scale(scale))
+
+        def show(scale, sent):
+            value.config(text=f"{scale:.1f}")
+            minus.config(state="disabled" if scale <= 0.1 else "normal")
+            plus.config(state="disabled" if scale >= 1.0 else "normal")
+            status.config(text=self.tr('Saadetud robotile') if sent
+                          else self.tr('ROS 2 pole saadaval: {v0}', v0=self.ros.error))
+
+        minus = self.button("−", lambda: change(-0.1), relx=0.25, rely=0.45, anchor="center",
+                            width=130, height=130)
+        plus = self.button("+", lambda: change(0.1), relx=0.75, rely=0.45, anchor="center",
+                           width=130, height=130)
+        for button in (minus, plus):
+            button.config(font=("Arial", 48, "bold"))
+        show(selected_speed_scale(), self.ros.node is not None)
 
     def show_speech_mode(self):
         """Switch the robot between manual speech, local AI and cloud AI conversation."""

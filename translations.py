@@ -15,6 +15,8 @@ ENGLISH = {
     "Wi-Fi seaded": "Wi-Fi settings",
     "Kõne": "Speech",
     "Kõnerežiim": "Speech mode",
+    "Sõidukiirus": "Driving speed",
+    "Saadetud robotile": "Sent to the robot",
     "Hääl →": "Voice →",
     "Mikrofon →": "Microphone →",
     "Vestlus →": "Conversation →",
