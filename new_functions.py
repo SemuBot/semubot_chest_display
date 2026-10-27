@@ -5,6 +5,7 @@ import datetime
 import json
 import os
 import queue
+import random
 import re
 import shutil
 import signal
@@ -19,6 +20,7 @@ from PIL import Image, ImageTk
 from translations import translate
 
 import audio_control as audio
+import tictactoe
 import network_control as network
 from constants import ADMIN_PASSWORD, BACKGROUND_COLOR, BASE_DIR, COLOUR2, COLOUR5, LOGO_PATH, SWIPE_DISTANCE
 
@@ -50,6 +52,14 @@ VAD_THRESHOLD_STATE_TOPIC = "/semubot/vad_threshold_state"
 TTS_SETTINGS_TOPIC = "/semubot/tts_settings"  # JSON {"speaker": ..., "speed": ...}
 TTS_SETTINGS_STATE_TOPIC = "/semubot/tts_settings_state"  # same plus "speakers"
 VOICE_SAMPLE = "Tere! Mina olen Semu. Nii kõlab minu hääl."
+TICTACTOE_EASY = 0.5  # chance the robot plays a random square on "Lihtne"
+GAME_IDLE_SECONDS = 60  # a game nobody touches returns to the chest image
+TICTACTOE_SPEECH = {  # the robot says one of these; speech stays Estonian like the TTS voice
+    "start": ["Mängime trips-traps-trulli! Sina alustad."],
+    "X": ["Palju õnne, sina võitsid!", "Hea mäng, seekord võitsid sina!"],
+    "O": ["Mina võitsin! Proovi uuesti.", "Seekord võitsin mina!"],
+    "draw": ["Viik! Hea mäng.", "Jäime viiki!"],
+}
 CONVERSATION_LOG_TOPIC = "/semubot/conversation_log"  # JSON list, latched, memory only
 CONVERSATION_LOG_CLEAR_TOPIC = "/semubot/conversation_log_clear"
 CLOUD_USAGE_TOPIC = "/semubot/cloud_usage"  # JSON {"today": {...}, "month": {...}, ...}
@@ -471,6 +481,8 @@ class ChestDisplayApp:
         self.speech_buttons = []
         self.speech_stop_button = None
         self.pending_speech_mode = None
+        self.tictactoe_mistakes = TICTACTOE_EASY
+        self.tictactoe_score = {"O": 0, "X": 0, "draw": 0}  # since the display started
         self.show_display()
 
     def tr(self, text, **values):
@@ -647,10 +659,11 @@ class ChestDisplayApp:
             (self.tr('Kõne'), self.show_speech),
             (self.tr('Kõnerežiim'), self.show_speech_mode),
             (self.tr('Sõidukiirus'), self.show_speed),
+            (self.tr('Mängud'), self.show_games),
         )
         for index, (label, command) in enumerate(buttons):
-            self.button(label, command, relx=0.5, rely=0.24 + index * 0.105,
-                        anchor="center", width=320, height=min(60, int(self.height * 0.095)))
+            self.button(label, command, relx=0.5, rely=0.22 + index * 0.095,
+                        anchor="center", width=320, height=min(60, int(self.height * 0.085)))
 
     def show_speed(self):
         """Scale the wheelbase's /cmd_vel speed in 0.1 steps between 0.1 and 1.0."""
@@ -687,6 +700,112 @@ class ChestDisplayApp:
         for button in (minus, plus):
             button.config(font=("Arial", 48, "bold"))
         show(selected_speed_scale(), self.ros.node is not None)
+
+    def show_games(self):
+        self.clear()
+        self.title(self.tr('Mängud'))
+        self.button(self.tr('← Tagasi'), self.show_admin, x=20, y=20, width=145, height=55)
+        self.button(self.tr('Trips-traps-trull'), self.show_tictactoe, relx=0.5, rely=0.4,
+                    anchor="center", width=320, height=min(60, int(self.height * 0.1)))
+
+    def show_tictactoe(self):
+        """Tic-tac-toe for visitors: they are X and start, the robot is O and talks.
+
+        Back and the idle timeout go to the chest image, so visitors never land in the admin menu.
+        """
+        self.clear()
+        self.title(self.tr('Trips-traps-trull'))
+        self.button(self.tr('← Tagasi'), self.show_display, x=20, y=20, width=145, height=55)
+        width, height = self.width, self.height
+        cell = int(min(width * 0.38, height * 0.7) / 3)
+        board = [""] * 9
+        state = {"game": 0, "busy": False, "touched": time.monotonic()}
+        token = self.view_token
+        status = self.add(tk.Label(self.root, text="", font=("Arial", 22, "bold"),
+                                   bg=BACKGROUND_COLOR, wraplength=int(width * 0.26)))
+        status.place(relx=0.15, rely=0.45, anchor="center")
+        score = self.add(tk.Label(self.root, text="", font=("Arial", 16),
+                                  bg=BACKGROUND_COLOR, wraplength=int(width * 0.26)))
+        score.place(relx=0.15, rely=0.65, anchor="center")
+        cells = []
+        for index in range(9):
+            cells.append(self.button(
+                "", lambda chosen=index: play(chosen),
+                x=int(width / 2 + (index % 3 - 1.5) * cell), y=int(height * 0.56 + (index // 3 - 1.5) * cell),
+                width=cell - 6, height=cell - 6))
+            cells[-1].config(font=("Arial", cell // 3, "bold"))
+
+        def level_text():
+            level = 'Lihtne' if self.tictactoe_mistakes else 'Raske'
+            return self.tr('Raskus: {v0}', v0=self.tr(level))
+
+        def show_score():
+            score.config(text=self.tr('Robot {v0} · Sina {v1} · Viik {v2}', v0=self.tictactoe_score["O"],
+                                      v1=self.tictactoe_score["X"], v2=self.tictactoe_score["draw"]))
+
+        def mark(index, player):
+            board[index] = player
+            cells[index].config(text=player, fg="#1f4e8c" if player == "X" else "#b1483a")
+
+        def finish(result):
+            self.tictactoe_score[result] += 1
+            show_score()
+            status.config(text=self.tr({"X": 'Sa võitsid!', "O": 'Robot võitis!', "draw": 'Viik!'}[result]))
+            for line in tictactoe.LINES:
+                if all(board[index] == result for index in line):
+                    for index in line:
+                        cells[index].config(bg=COLOUR2)
+            self.ros.say(random.choice(TICTACTOE_SPEECH[result]))
+
+        def play(index):
+            state["touched"] = time.monotonic()
+            if state["busy"] or board[index] or tictactoe.winner(board):
+                return
+            mark(index, "X")
+            if tictactoe.winner(board):
+                finish(tictactoe.winner(board))
+                return
+            state["busy"] = True
+            status.config(text=self.tr('Robot mõtleb…'))
+            self.root.after(700, lambda game=state["game"]: robot_turn(game))
+
+        def robot_turn(game):
+            if token != self.view_token or game != state["game"]:
+                return
+            mark(tictactoe.robot_move(board, "O", self.tictactoe_mistakes), "O")
+            state["busy"] = False
+            if tictactoe.winner(board):
+                finish(tictactoe.winner(board))
+            else:
+                status.config(text=self.tr('Sinu kord'))
+
+        def new_game():
+            state.update(game=state["game"] + 1, busy=False, touched=time.monotonic())
+            board[:] = [""] * 9
+            for button in cells:
+                button.config(text="", bg=COLOUR5)
+            status.config(text=self.tr('Sinu kord'))
+
+        def toggle_level():
+            self.tictactoe_mistakes = 0.0 if self.tictactoe_mistakes else TICTACTOE_EASY
+            level.config(text=level_text())
+            new_game()
+
+        def idle():
+            if token != self.view_token:
+                return
+            if time.monotonic() - state["touched"] > GAME_IDLE_SECONDS:
+                self.show_display()
+                return
+            self.root.after(1000, idle)
+
+        side = dict(relx=0.85, anchor="center", width=min(240, width // 5), height=min(60, int(height * 0.1)))
+        level = self.button(level_text(), toggle_level, rely=0.45, **side)
+        self.button(self.tr('Uus mäng'), new_game, rely=0.62, **side)
+        new_game()
+        show_score()
+        self.ros.say(random.choice(TICTACTOE_SPEECH["start"]))
+        idle()
 
     def show_speech_mode(self):
         """Switch the robot between manual speech, local AI and cloud AI conversation."""

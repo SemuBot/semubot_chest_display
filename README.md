@@ -241,3 +241,17 @@ for example people further away, are ignored.
 The screen uses the ROS 2 topics `/semubot/audio_level` (`Float32MultiArray`
 `[rms, speech probability]`), `/semubot/vad_threshold` and `/semubot/vad_threshold_state`
 (`Float32`) of the robot's `semu_brain_node`.
+
+## Tic-tac-toe
+
+**Admin menüü → Mängud → Trips-traps-trull** opens a game for visitors. The visitor is X and starts; the
+robot is O, thinks for a moment and says a line out loud at the start and at the end of each game
+(through `/speech_input`, in Estonian with the robot's current voice). The three winning squares
+light up. **Raskus** switches between **Lihtne** (half of the robot's moves are random) and
+**Raske** (the robot never loses); **Uus mäng** starts over. The score since the display started
+is shown on the left.
+
+**← Tagasi**, or 60 seconds without a touch, returns to the chest image, not to the admin menu,
+so the robot can be left with visitors. The rules and the robot's moves are in `tictactoe.py`;
+the spoken lines are `TICTACTOE_SPEECH` in `new_functions.py`. Run the checks with
+`python3 -m pytest tests/test_tictactoe.py` (the screen part needs a graphical display).
