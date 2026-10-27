@@ -4,7 +4,7 @@ import time
 import tkinter as tk
 from unittest.mock import MagicMock, patch
 
-import new_functions as ui
+import app as ui
 import tictactoe
 
 

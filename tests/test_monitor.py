@@ -2,7 +2,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from new_functions import monitor_geometry  # noqa: E402
+from app import monitor_geometry  # noqa: E402
 
 XRANDR = """Screen 0: minimum 16 x 16, current 3200 x 1440, maximum 32767 x 32767
 HDMI-2 connected 1280x800+1920+0 inverted (normal left inverted right x axis y axis) 0mm x 0mm

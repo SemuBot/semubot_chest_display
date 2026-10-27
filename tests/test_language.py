@@ -5,7 +5,7 @@ import tempfile
 import tkinter as tk
 from unittest.mock import MagicMock, patch
 
-import new_functions as ui
+import app as ui
 from translations import ENGLISH, translate
 
 
@@ -52,6 +52,14 @@ def test_menu_language():
             button(root, 'English').invoke()
             assert app.language == 'en' and 'Admin login' in texts(root)
             assert 'Log in' in texts(root)
+            for password, typed, opens in (('', '42', False), ('42', '41', False), ('42', '42', True)):
+                with patch.object(ui, 'ADMIN_PASSWORD', password):  # '' = no PIN in chest_display.env
+                    app.show_login()
+                    for key in typed:
+                        button(root, key).invoke()
+                    button(root, 'Log in').invoke()
+                    assert ('Admin menu' in texts(root)) == opens, (password, typed)
+                    assert ('Admin password is not set' in texts(root)) == (password == '')
             app.show_admin()
             assert 'Change display image' in texts(root)
             assert 'Audio settings' in texts(root)

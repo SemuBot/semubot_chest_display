@@ -14,63 +14,52 @@ The default is Estonian. This setting changes the menu labels and status text;
 robot speech, conversation contents, network names, and image names keep their
 original language.
 
-## Start on the chest monitor at login
+## Install on the robot
 
-The app needs a graphical desktop session. On the Ubuntu robot, first run
-`echo $XDG_SESSION_TYPE` in a terminal. If it says `wayland`, choose an
-**Ubuntu on Xorg** session at the login screen if that option is available;
-the geometry setting below is intended for X11 screen coordinates. On X11,
-use `xrandr --query` after
-connecting both screens to find the chest screen's size and position. For
-example, if the face screen is `1920x1080+0+0` and the chest screen is
-`1024x600+1920+0`, run:
+Everything the robot needs outside this repo lives in `deploy/`. As the desktop user (auto-login),
+after cloning the repo to `~/semubot_chest_display`, run once and again after pulls that change
+`deploy/`:
 
 ```sh
-CHEST_DISPLAY_GEOMETRY=1024x600+1920+0 python3 main.py
+sudo apt install python3-tk python3-pil.imagetk
+./deploy/install.sh
 ```
 
-Alternatively set `CHEST_DISPLAY_MONITOR` to the chest monitor's connector name from
-`xrandr --query` (e.g. `CHEST_DISPLAY_MONITOR=HDMI-2`) and leave `CHEST_DISPLAY_GEOMETRY` unset:
-the app then places its window on that monitor and checks every 2 seconds, moving the window if
-the monitor's position or size changes (for example when GNOME applies the saved screen layout
-just after login, or a screen is rotated). It prints the position it uses (`Chest display
-window: ...`) and every move to its log.
+It sets up:
 
-The format is `WIDTHxHEIGHT+X+Y`. Without this variable, the app uses the
-desktop's full reported size at `+0+0`. Test the command in the robot's desktop
-session before enabling automatic startup. The setting controls both window
-placement and the size used by the app's menus and image preview.
+- **`semubot-chest-display.service`**, a systemd user service that starts with the desktop session
+  and restarts the app if it crashes. It runs `deploy/start.sh`, which sources ROS 2 Jazzy with
+  SemuBot's domain (`ROS_DOMAIN_ID=5`, CycloneDDS from `~/cyclonedds.xml`) and starts `main.py`.
+  Restart it with `systemctl --user restart semubot-chest-display`; read its log with
+  `journalctl --user -u semubot-chest-display -f`.
+- **`~/.config/semubot/chest_display.env`**, only if it does not exist yet, from
+  `deploy/chest_display.env.example`. It is not in git: set the admin PIN there
+  (`CHEST_DISPLAY_ADMIN_PASSWORD`; without it the admin menu stays locked) and which monitor is
+  the chest screen.
+- **`~/.config/monitors.xml`** from `deploy/monitors.xml`: GNOME's saved screen layouts. The chest
+  screen is mounted upside down, so every layout that includes it, with or without the head
+  screen, turns it 180°. GNOME keeps one layout per combination of connected screens; when you
+  change the layout in GNOME Settings, copy `~/.config/monitors.xml` back into `deploy/`. The
+  previous file is kept as `monitors.xml.bak-<date>`. It is used from the next login.
+- **The GNOME extension `disable-gestures@semubot`** (via `install_disable_gestures.sh`), see below.
 
-Install the GUI dependencies with `sudo apt install python3-tk python3-pil.imagetk`
-if they are not installed already. To start it whenever the desktop user logs in, create
-`~/.config/autostart/semubot-chest-display.desktop` for that user:
+It also removes the older `~/.config/autostart/semubot-chest-display.desktop` and
+`~/.local/bin/semubot-chest-display` launcher, which the service replaces.
 
-```ini
-[Desktop Entry]
-Type=Application
-Name=SemuBot chest display
-Exec=/usr/bin/env CHEST_DISPLAY_GEOMETRY=1024x600+1920+0 /usr/bin/python3 /home/robot/semubot_chest_display/main.py
-Terminal=false
-```
+### Window placement
 
-Replace the geometry, Python path, user, and project path with the robot's
-values. If Pillow is installed in a virtual environment, use that environment's
-`python` executable in `Exec`. Enable desktop auto-login if this should start
-without someone logging in. Desktop autostart runs after the graphical session
-starts; it is different from a system service started before login.
-
-Ubuntu's **Startup Applications** tool can also add the same `Exec` command.
-If the face background color must reach ROS at startup, launch the app through
-a shell script that sources the robot's ROS 2 environment before running
-`main.py`.
-
-Wayland compositors may control window placement themselves. On Wayland, set
-the monitor and startup rule in the compositor's configuration if the geometry
-setting does not place the window as requested.
+`CHEST_DISPLAY_MONITOR` (in `chest_display.env`) is the chest monitor's connector name from
+`xrandr --query`, e.g. `HDMI-2`. The app places its window on that monitor and checks every 2
+seconds, moving the window if the monitor's position or size changes (for example when GNOME
+applies the saved screen layout just after login, or a screen is rotated). It prints the position
+it uses (`Chest display window: ...`) and every move to its log. `CHEST_DISPLAY_GEOMETRY`
+(`WIDTHxHEIGHT+X+Y`) sets a fixed position instead. With neither, the app uses the desktop's full
+reported size at `+0+0`. For a quick test outside the service:
+`CHEST_DISPLAY_GEOMETRY=1024x600+0+0 python3 main.py`.
 
 GNOME's own touchscreen gestures (three-finger swipe up opens the overview, edge swipes open
-the on-screen keyboard) get in the way of the display. Run `./install_disable_gestures.sh` once as
-the desktop user to install the `gnome-extension/` folder as the GNOME extension
+the on-screen keyboard) get in the way of the display. `install_disable_gestures.sh` (run by
+`deploy/install.sh`) installs the `gnome-extension/` folder as the GNOME extension
 `disable-gestures@semubot`, which turns those gestures off. On Wayland it takes effect after the next
 login. Check it with `gnome-extensions info disable-gestures@semubot` (State: ACTIVE); undo it with
 `gnome-extensions disable disable-gestures@semubot`.
@@ -88,8 +77,8 @@ Selecting an image opens a preview on the chest display. **Salvesta** makes it
 the default image and restores it on the next start; **Võta tagasi** returns to
 the gallery without changing the saved selection. Imported image files stay in
 the gallery even if their preview is undone. The selection is stored in
-`chest_display.json`. The admin password is defined by `ADMIN_PASSWORD` in
-`constants.py`.
+`chest_display.json`. The admin password is `CHEST_DISPLAY_ADMIN_PASSWORD` in
+`~/.config/semubot/chest_display.env` (see Install on the robot).
 
 Supported formats are PNG, JPEG, WebP, and BMP. Images are scaled to fit the
 display without changing their aspect ratio. An image with transparent corners (a logo) is shown
@@ -163,17 +152,8 @@ so both always show the same mode.
 
 The chest display, rosbridge and the brain node must be in the same ROS 2 domain. On SemuBot that
 is `ROS_DOMAIN_ID=5` with `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` and
-`CYCLONEDDS_URI=file:///home/semubot/cyclonedds.xml`. Start the display from a script that
-sources ROS 2 and exports these values, for example:
-
-```sh
-#!/bin/bash
-source /opt/ros/jazzy/setup.bash
-export ROS_DOMAIN_ID=5 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp CYCLONEDDS_URI=file:///home/semubot/cyclonedds.xml
-export PATH="$HOME/.local/bin:$PATH"
-cd /home/semubot/semubot_chest_display
-exec python3 main.py
-```
+`CYCLONEDDS_URI=file:///home/semubot/cyclonedds.xml`. `deploy/start.sh` exports these
+values before starting the app.
 
 The display exits cleanly on SIGINT/SIGTERM (Ctrl+C, logout, `kill`).
 
@@ -253,5 +233,42 @@ is shown on the left.
 
 **← Tagasi**, or 60 seconds without a touch, returns to the chest image, not to the admin menu,
 so the robot can be left with visitors. The rules and the robot's moves are in `tictactoe.py`;
-the spoken lines are `TICTACTOE_SPEECH` in `new_functions.py`. Run the checks with
+the spoken lines are `TICTACTOE_SPEECH` in `app.py`. Run the checks with
 `python3 -m pytest tests/test_tictactoe.py` (the screen part needs a graphical display).
+
+## Code layout
+
+- `main.py` starts the app; `app.py` has the screens (`ChestDisplayApp`), saved settings and window
+  placement.
+- `ros_bridge.py` has every ROS 2 topic name the display uses and `RobotRos`, the node that talks
+  on them.
+- `audio_control.py`, `network_control.py` and `tictactoe.py` are the sound, Wi-Fi and game logic
+  without any screens; `translations.py` has the English menu texts.
+- Run the checks with `python3 -m pytest tests` in the desktop session (the screen tests need a
+  graphical display).
+
+## ROS 2 topics
+
+All on `ROS_DOMAIN_ID=5`. "Latched" means transient-local QoS: a node that starts later still gets
+the last value. Topic names are in `ros_bridge.py`; the other end must use the same name and type,
+or the setting silently does nothing.
+
+| Topic | Type | Chest display | Other end |
+|---|---|---|---|
+| `/face/background_color` | `String` `#RRGGBB`, latched | publishes | `semubot_eyes` (`eye_controller.py`) |
+| `/semubot/speed_scale` | `Float32` 0.1–1.0, latched | publishes | Pi: `semubot_raspberry_bringup` (`cmd_vel_motor_driver.py`), multiplies `/cmd_vel` |
+| `/semubot/mode` | `String` `manual`/`local`/`cloud` | publishes | `semubot_brain` (`llm_controller.py`); also the webapp |
+| `/semubot/mode_state` | `String`, latched | subscribes | published by `semubot_brain`; also read by the webapp |
+| `/speech_input` | `String` | publishes (text to say) | `semubot_brain`; also the webapp |
+| `/semubot/tts_settings` | `String` JSON `{"speaker", "speed"}` | publishes | `semubot_brain` |
+| `/semubot/tts_settings_state` | `String` JSON, plus `"speakers"`, latched | subscribes | published by `semubot_brain` |
+| `/semubot/vad_threshold` | `Float32` | publishes | `semubot_brain` |
+| `/semubot/vad_threshold_state` | `Float32`, latched | subscribes | published by `semubot_brain` |
+| `/semubot/audio_level` | `Float32MultiArray` `[rms, speech probability]`, 10 Hz | subscribes | published by `semubot_brain` |
+| `/semubot/conversation_log` | `String` JSON list, latched | subscribes | published by `semubot_brain`; also read by `semubot_eyes` |
+| `/semubot/conversation_log_clear` | `Empty` | publishes | `semubot_brain` |
+| `/semubot/cloud_usage` | `String` JSON, latched | subscribes | published by `semubot_brain` |
+| `/semubot/state` | `String` JSON `{"stage", "mode", "since"}`, latched | subscribes | published by `semubot_brain`; also read by `semubot_eyes` |
+
+`semubot_brain` and `semubot_eyes` are in `~/Speech_Recogniton_ws` on the NUC; the webapp talks
+through rosbridge.

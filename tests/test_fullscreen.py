@@ -4,7 +4,7 @@ import sys
 from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from new_functions import opaque_edge_color  # noqa: E402
+from app import opaque_edge_color  # noqa: E402
 
 
 def test_opaque_image_gives_its_corner_colour():

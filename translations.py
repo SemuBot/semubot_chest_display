@@ -137,6 +137,7 @@ ENGLISH = {
     "{requests} {request_word}, {tokens} sõnet": "{requests} {request_word}, {tokens} tokens",
     "päring": "request", "päringut": "requests",
     " (osaliselt hinnata)": " (partially unpriced)", " (hind teadmata)": " (price unknown)",
+    "Admin parool pole seadistatud": "Admin password is not set",
     "Trips-traps-trull": "Tic-tac-toe", "Mängud": "Games", "Sinu kord": "Your turn", "Robot mõtleb…": "Robot is thinking…",
     "Sa võitsid!": "You won!", "Robot võitis!": "Robot won!", "Viik!": "Draw!", "Uus mäng": "New game",
     "Raskus: {v0}": "Level: {v0}", "Lihtne": "Easy", "Raske": "Hard",
