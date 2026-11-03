@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import time
+from types import SimpleNamespace
 import tkinter as tk
 from unittest.mock import MagicMock, patch
 
@@ -48,6 +49,18 @@ def test_menu_language():
             json.dump({'image': 'images/logos/Logo.PNG', 'face_background_color': '#DDF4FF'}, file)
         with patch.object(ui, 'SETTINGS_PATH', path), patch.object(ui, 'RobotRos', return_value=ros):
             app = ui.ChestDisplayApp(root, 1280, 800)
+            corner = {'tl': SimpleNamespace(x=20, y=20), 'br': SimpleNamespace(x=1260, y=780),
+                      'mid': SimpleNamespace(x=640, y=400)}
+            for taps, gap, opens in (('tl tl br br br', 1.5, True),
+                                     ('tl br br br', 1.5, False),          # too few top-left taps
+                                     ('tl tl mid br br br', 1.5, False),   # a tap elsewhere starts over
+                                     ('br tl tl tl br br br', 1.5, True),  # extra taps before still work
+                                     ('tl tl br br br', 0, False)):        # too slow
+                app.show_display()
+                with patch.object(ui, 'UNLOCK_TAP_GAP', gap):
+                    for tap in taps.split():
+                        app.unlock_tap(corner[tap])
+                assert ('Admin sisenemine' in texts(root)) == opens, taps
             app.show_login()
             assert 'Admin sisenemine' in texts(root)
             button(root, 'English').invoke()

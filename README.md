@@ -6,7 +6,8 @@ default image.
 
 ## Menu language
 
-Swipe upward to open the admin login screen. Tap **English** in the upper right
+Tap the top-left corner twice, then the bottom-right corner three times, to open the admin
+login screen (see Admin menu below). Tap **English** in the upper right
 to switch the menu to English; tap **Eesti** to return to Estonian. The same
 button is available in the admin menu. The selected language is saved as
 `menu_language` (`et` or `en`) in `chest_display.json` and restored at startup.
@@ -64,8 +65,14 @@ the on-screen keyboard) get in the way of the display. `install_disable_gestures
 login. Check it with `gnome-extensions info disable-gestures@semubot` (State: ACTIVE); undo it with
 `gnome-extensions disable disable-gestures@semubot`.
 
-Swipe upward at least 300 pixels on the display, enter the admin password, and
-choose **Muuda ekraani pilti**. The gallery has **Logod**, **Silmad**, **Suud**,
+## Admin menu
+
+To open it, tap the chest image's **top-left corner twice, then the bottom-right corner three
+times** (corners as visitors see them, within about 150 pixels of the edges; at most 1.5 seconds
+between taps, a tap anywhere else starts over). The sequence and limits are `UNLOCK_SEQUENCE`,
+`UNLOCK_CORNER_SIZE` and `UNLOCK_TAP_GAP` in `constants.py`. Then enter the admin password.
+
+In the admin menu, choose **Muuda ekraani pilti**. The gallery has **Logod**, **Silmad**, **Suud**,
 and **Muud** tabs. **Lisa pilt** opens a file chooser and copies the image into
 the active tab's folder: `images/logos/`, `images/eyes/`, `images/mouths/`, or
 `images/other/`. You can also copy images into those folders yourself; they

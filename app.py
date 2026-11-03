@@ -27,8 +27,8 @@ import audio_control as audio
 from ros_bridge import RobotRos
 import tictactoe
 import network_control as network
-from constants import (ADMIN_PASSWORD, BACKGROUND_COLOR, BASE_DIR, COLOUR2, COLOUR5, LOGO_PATH, SWIPE_DISTANCE,
-                       WEBAPP_PORT)
+from constants import (ADMIN_PASSWORD, BACKGROUND_COLOR, BASE_DIR, COLOUR2, COLOUR5, LOGO_PATH,
+                       UNLOCK_CORNER_SIZE, UNLOCK_SEQUENCE, UNLOCK_TAP_GAP, WEBAPP_PORT)
 
 
 IMAGE_DIR = os.path.join(BASE_DIR, "images")
@@ -254,7 +254,8 @@ class ChestDisplayApp:
         self.canvas.pack(fill="both", expand=True)
         self.widgets = []
         self.photos = []
-        self.swipe_start = None
+        self.unlock_taps = []
+        self.last_tap = 0.0
         self.view_token = 0
         self.pending_face_color = None
         self.pending_image = None
@@ -405,12 +406,21 @@ class ChestDisplayApp:
             self.draw_image(path, width, height, height // 2)
         else:  # a logo with transparency: smaller, on the normal background
             self.draw_image(path, int(width * 0.8), int(height * 0.75), height // 2)
-        self.canvas.bind("<Button-1>", lambda event: setattr(self, "swipe_start", event.y))
-        self.canvas.bind("<ButtonRelease-1>", self.end_swipe)
+        self.canvas.bind("<Button-1>", self.unlock_tap)
         self.on_display = True
 
-    def end_swipe(self, event):
-        if self.swipe_start is not None and self.swipe_start - event.y >= SWIPE_DISTANCE:
+    def unlock_tap(self, event):
+        """Open the PIN screen after UNLOCK_SEQUENCE: 2 taps top left, then 3 bottom right."""
+        now = time.monotonic()
+        if now - self.last_tap > UNLOCK_TAP_GAP:
+            self.unlock_taps = []
+        self.last_tap = now
+        size = UNLOCK_CORNER_SIZE
+        corner = ("top-left" if event.x < size and event.y < size else
+                  "bottom-right" if event.x >= self.width - size and event.y >= self.height - size else None)
+        self.unlock_taps = (self.unlock_taps + [corner])[-len(UNLOCK_SEQUENCE):]
+        if self.unlock_taps == UNLOCK_SEQUENCE:
+            self.unlock_taps = []
             self.show_login()
 
     def show_login(self):
