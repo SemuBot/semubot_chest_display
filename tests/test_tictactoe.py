@@ -59,7 +59,7 @@ def test_game_screen():
         while sum(c.cget('text') == 'O' for c in cells) < 1 and time.monotonic() < deadline:
             root.update()
         assert sum(c.cget('text') == 'O' for c in cells) == 1
-        with patch.object(ui, 'GAME_IDLE_SECONDS', 0):
+        with patch.object(ui, 'MENU_IDLE_SECONDS', 0):
             deadline = time.monotonic() + 3
             while cells[0].winfo_exists() and time.monotonic() < deadline:
                 root.update()

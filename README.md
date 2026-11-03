@@ -21,7 +21,7 @@ after cloning the repo to `~/semubot_chest_display`, run once and again after pu
 `deploy/`:
 
 ```sh
-sudo apt install python3-tk python3-pil.imagetk
+sudo apt install python3-tk python3-pil.imagetk python3-qrcode
 ./deploy/install.sh
 ```
 
@@ -86,6 +86,20 @@ at up to 80% of the width and 75% of the height on the normal background. An ima
 corners (a design with its own background) is shown as large as fits on the whole screen, and
 the space around it gets the colour of its top-left pixel, so it looks edge to edge. These categories organize images
 shown on the chest display; they do not change the robot's ROS face.
+
+## Idle timeout
+
+A menu screen (PIN entry, admin menu, settings, games) that nobody touches for 60 seconds
+(`MENU_IDLE_SECONDS` in `app.py`) returns to the chest image. The conversation log (**Vestlus**) and
+microphone (**Mikrofon**) screens are meant to be watched, so they stay open until you leave them. Unsaved previews (image, face
+color) are undone, and the PIN is asked again.
+
+## Webapp QR code
+
+**QR-kood** in the admin menu (under the language button) shows a QR code for the webapp,
+`http://<robot IPv4>:8000`, so a phone can open it without typing the address. The Wi-Fi address
+is used first. The port is `WEBAPP_PORT` in `constants.py` and must match `semubot_webapp`. Without
+`python3-qrcode` the screen shows only the address as text.
 
 ## Face background color
 

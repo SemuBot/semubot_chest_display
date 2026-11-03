@@ -2,6 +2,7 @@
 import json
 import os
 import tempfile
+import time
 import tkinter as tk
 from unittest.mock import MagicMock, patch
 
@@ -71,10 +72,31 @@ def test_menu_language():
             for show in (app.show_speech_mode, app.show_voice, app.show_conversation,
                          app.show_microphone, app.show_speech, app.show_face_colors,
                          app.show_gallery, lambda: app.show_wifi_password('My network'),
-                         app.show_audio_settings, app.show_wifi_settings, app.show_speed):
+                         app.show_audio_settings, app.show_wifi_settings, app.show_speed,
+                         app.show_webapp_qr):
                 show()
                 root.update_idletasks()
                 assert '← Back' in texts(root)
+            with patch.object(ui.network, 'ipv4_addresses', return_value=[('wlo1', '10.0.0.5')]):
+                app.show_webapp_qr()
+                deadline = time.monotonic() + 3
+                while 'http://10.0.0.5:8000' not in ' '.join(texts(root)) and time.monotonic() < deadline:
+                    root.update()
+            assert 'http://10.0.0.5:8000' in ' '.join(texts(root))
+            assert bool(app.canvas.find_all()) == (ui.qrcode is not None)  # the QR image
+            app.show_login()
+            with patch.object(ui, 'MENU_IDLE_SECONDS', 0):
+                deadline = time.monotonic() + 3
+                while not app.on_display and time.monotonic() < deadline:
+                    root.update()
+            assert app.on_display and 'Admin login' not in texts(root)  # idle login went back to the image
+            for watched in (app.show_conversation, app.show_microphone):  # screens without the timeout
+                watched()
+                with patch.object(ui, 'MENU_IDLE_SECONDS', 1):  # shorter than the run, longer than a refresh
+                    deadline = time.monotonic() + 2.5
+                    while time.monotonic() < deadline:
+                        root.update()
+                assert not app.on_display, watched
             app.show_speed()
             for _ in range(3):
                 button(root, '−').invoke()

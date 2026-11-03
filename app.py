@@ -16,13 +16,19 @@ from tkinter import colorchooser, filedialog, messagebox
 
 from PIL import Image, ImageTk
 
+try:
+    import qrcode  # apt install python3-qrcode; only the webapp QR screen needs it
+except ImportError:
+    qrcode = None
+
 from translations import translate
 
 import audio_control as audio
 from ros_bridge import RobotRos
 import tictactoe
 import network_control as network
-from constants import ADMIN_PASSWORD, BACKGROUND_COLOR, BASE_DIR, COLOUR2, COLOUR5, LOGO_PATH, SWIPE_DISTANCE
+from constants import (ADMIN_PASSWORD, BACKGROUND_COLOR, BASE_DIR, COLOUR2, COLOUR5, LOGO_PATH, SWIPE_DISTANCE,
+                       WEBAPP_PORT)
 
 
 IMAGE_DIR = os.path.join(BASE_DIR, "images")
@@ -45,7 +51,7 @@ FACE_COLORS = {
 DEFAULT_FACE_COLOR = "#FFFFFF"
 VOICE_SAMPLE = "Tere! Mina olen Semu. Nii kõlab minu hääl."
 TICTACTOE_EASY = 0.5  # chance the robot plays a random square on "Lihtne"
-GAME_IDLE_SECONDS = 60  # a game nobody touches returns to the chest image
+MENU_IDLE_SECONDS = 60  # a menu screen nobody touches returns to the chest image (not log/microphone)
 TICTACTOE_SPEECH = {  # the robot says one of these; speech stays Estonian like the TTS voice
     "start": ["Mängime trips-traps-trulli! Sina alustad."],
     "X": ["Palju õnne, sina võitsid!", "Hea mäng, seekord võitsid sina!"],
@@ -262,7 +268,21 @@ class ChestDisplayApp:
         self.pending_speech_mode = None
         self.tictactoe_mistakes = TICTACTOE_EASY
         self.tictactoe_score = {"O": 0, "X": 0, "draw": 0}  # since the display started
+        self.on_display = False
+        self.last_touch = time.monotonic()
+        for sequence in ("<ButtonPress>", "<KeyPress>"):
+            root.bind_all(sequence, self.touched, add="+")
         self.show_display()
+        self.check_idle()
+
+    def touched(self, _event=None):
+        self.last_touch = time.monotonic()
+
+    def check_idle(self):
+        """One timer for every menu screen, so a visitor never finds the PIN screen or admin menu open."""
+        if not self.on_display and time.monotonic() - self.last_touch > MENU_IDLE_SECONDS:
+            self.show_display()
+        self.root.after(1000, self.check_idle)
 
     def tr(self, text, **values):
         return translate(self.language, text, **values)
@@ -311,6 +331,7 @@ class ChestDisplayApp:
         self.speech_status_label = None
         self.speech_buttons = []
         self.speech_stop_button = None
+        self.on_display = False
 
     def run_background(self, task, callback):
         """Run a slow system command without blocking the Tk event loop."""
@@ -386,6 +407,7 @@ class ChestDisplayApp:
             self.draw_image(path, int(width * 0.8), int(height * 0.75), height // 2)
         self.canvas.bind("<Button-1>", lambda event: setattr(self, "swipe_start", event.y))
         self.canvas.bind("<ButtonRelease-1>", self.end_swipe)
+        self.on_display = True
 
     def end_swipe(self, event):
         if self.swipe_start is not None and self.swipe_start - event.y >= SWIPE_DISTANCE:
@@ -431,6 +453,8 @@ class ChestDisplayApp:
         self.clear()
         self.title(self.tr('Admin menüü'))
         self.language_button(self.show_admin)
+        self.button(self.tr('QR-kood'), self.show_webapp_qr, relx=1, x=-20, y=85, anchor="ne",
+                    width=190, height=55)
         self.button(self.tr('← Tagasi'), self.show_display, x=20, y=20, width=145, height=55)
         buttons = (
             (self.tr('Muuda ekraani pilti'), self.show_gallery),
@@ -445,6 +469,32 @@ class ChestDisplayApp:
         for index, (label, command) in enumerate(buttons):
             self.button(label, command, relx=0.5, rely=0.22 + index * 0.095,
                         anchor="center", width=320, height=min(60, int(self.height * 0.085)))
+
+    def show_webapp_qr(self):
+        """QR code of the webapp's address, so a phone opens it without typing the IP."""
+        self.clear()
+        self.title(self.tr('Veebirakendus'))
+        self.button(self.tr('← Tagasi'), self.show_admin, x=20, y=20, width=145, height=55)
+        label = self.add(tk.Label(self.root, text=self.tr('IPv4: otsin...'), font=("Arial", 20, "bold"),
+                                  bg=BACKGROUND_COLOR, wraplength=self.width - 80))
+        label.place(relx=0.5, rely=0.9, anchor="center")
+
+        def found(addresses, error):
+            if error is not None or not addresses:
+                label.config(text=self.tr('Robotil pole IP-aadressi (pole võrgus?)'))
+                return
+            url = f"http://{addresses[0][1]}:{WEBAPP_PORT}"  # Wi-Fi first, see ipv4_addresses
+            if qrcode is None:
+                label.config(text=url + "\n" + self.tr('QR-koodi jaoks paigalda python3-qrcode'))
+                return
+            label.config(text=url)
+            size = int(min(self.width, self.height) * 0.6)
+            image = qrcode.make(url, border=2).get_image().resize((size, size), Image.Resampling.NEAREST)
+            photo = ImageTk.PhotoImage(image)
+            self.photos.append(photo)
+            self.canvas.create_image(self.width // 2, self.height // 2, image=photo)
+
+        self.run_background(network.ipv4_addresses, found)
 
     def show_speed(self):
         """Scale the wheelbase's /cmd_vel speed in 0.1 steps between 0.1 and 1.0."""
@@ -492,7 +542,7 @@ class ChestDisplayApp:
     def show_tictactoe(self):
         """Tic-tac-toe for visitors: they are X and start, the robot is O and talks.
 
-        Back and the idle timeout go to the chest image, so visitors never land in the admin menu.
+        Back and the menu idle timeout go to the chest image, so visitors never land in the admin menu.
         """
         self.clear()
         self.title(self.tr('Trips-traps-trull'))
@@ -500,7 +550,7 @@ class ChestDisplayApp:
         width, height = self.width, self.height
         cell = int(min(width * 0.38, height * 0.7) / 3)
         board = [""] * 9
-        state = {"game": 0, "busy": False, "touched": time.monotonic()}
+        state = {"game": 0, "busy": False}
         token = self.view_token
         status = self.add(tk.Label(self.root, text="", font=("Arial", 22, "bold"),
                                    bg=BACKGROUND_COLOR, wraplength=int(width * 0.26)))
@@ -539,7 +589,6 @@ class ChestDisplayApp:
             self.ros.say(random.choice(TICTACTOE_SPEECH[result]))
 
         def play(index):
-            state["touched"] = time.monotonic()
             if state["busy"] or board[index] or tictactoe.winner(board):
                 return
             mark(index, "X")
@@ -561,7 +610,7 @@ class ChestDisplayApp:
                 status.config(text=self.tr('Sinu kord'))
 
         def new_game():
-            state.update(game=state["game"] + 1, busy=False, touched=time.monotonic())
+            state.update(game=state["game"] + 1, busy=False)
             board[:] = [""] * 9
             for button in cells:
                 button.config(text="", bg=COLOUR5)
@@ -572,21 +621,12 @@ class ChestDisplayApp:
             level.config(text=level_text())
             new_game()
 
-        def idle():
-            if token != self.view_token:
-                return
-            if time.monotonic() - state["touched"] > GAME_IDLE_SECONDS:
-                self.show_display()
-                return
-            self.root.after(1000, idle)
-
         side = dict(relx=0.85, anchor="center", width=min(240, width // 5), height=min(60, int(height * 0.1)))
         level = self.button(level_text(), toggle_level, rely=0.45, **side)
         self.button(self.tr('Uus mäng'), new_game, rely=0.62, **side)
         new_game()
         show_score()
         self.ros.say(random.choice(TICTACTOE_SPEECH["start"]))
-        idle()
 
     def show_speech_mode(self):
         """Switch the robot between manual speech, local AI and cloud AI conversation."""
@@ -770,6 +810,7 @@ class ChestDisplayApp:
         def refresh():
             if token != self.view_token:
                 return
+            self.touched()  # watched rather than touched: no idle timeout here
             raw = self.ros.conversation_log
             if raw != state["shown"]:
                 state["shown"] = raw
@@ -868,6 +909,7 @@ class ChestDisplayApp:
         def refresh():
             if token != self.view_token:
                 return
+            self.touched()  # watched rather than touched: no idle timeout here
             reported = self.ros.vad_threshold
             if reported is not None and not state["dragging"] and \
                     state["calibrate_until"] is None and threshold.get() != reported:

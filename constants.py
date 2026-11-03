@@ -17,3 +17,6 @@ BASE_DIR = os.path.dirname(__file__)
 
 # Default image path
 LOGO_PATH = "images/logos/Logo.PNG"
+
+# Port of the webapp (repo semubot_webapp, uvicorn in app/main.py), shown as a QR code in the admin menu
+WEBAPP_PORT = 8000
