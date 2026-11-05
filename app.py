@@ -28,7 +28,7 @@ from ros_bridge import RobotRos
 import tictactoe
 import network_control as network
 from constants import (ADMIN_PASSWORD, BACKGROUND_COLOR, BASE_DIR, COLOUR2, COLOUR5, LOGO_PATH,
-                       UNLOCK_CORNER_SIZE, UNLOCK_SEQUENCE, UNLOCK_TAP_GAP, WEBAPP_PORT)
+                       LOW_BATTERY, UNLOCK_CORNER_SIZE, UNLOCK_SEQUENCE, UNLOCK_TAP_GAP, WEBAPP_PORT)
 
 
 IMAGE_DIR = os.path.join(BASE_DIR, "images")
@@ -197,6 +197,32 @@ def save_selected_image(path):
     if path not in available_images().values():
         raise ValueError("Image is not available")
     save_setting("image", path)
+
+
+def battery_level(battery, now):
+    """Charge 0-1 from RobotRos.battery, or None when unknown or the Pi hasn't reported for 10 s."""
+    if not battery or now - battery[2] > 10 or battery[0] != battery[0]:  # last check: NaN
+        return None
+    return min(max(battery[0], 0.0), 1.0)
+
+
+def battery_text(battery, now):
+    """'76 % · 26.8 V' from RobotRos.battery, or '—' when the Pi hasn't reported for 10 s."""
+    if not battery or now - battery[2] > 10:
+        return "—"
+    level = battery_level(battery, now)
+    volts = f"{battery[1]:.1f} V"
+    return volts if level is None else f"{round(level * 100)} % · {volts}"
+
+
+def draw_battery_icon(canvas, level):
+    """Battery outline filled to `level` (0-1): green above 40 %, yellow above LOW_BATTERY, else red."""
+    canvas.delete("all")
+    canvas.create_rectangle(2, 2, 56, 30, outline="black", width=3)
+    canvas.create_rectangle(57, 10, 62, 22, fill="black", outline="black")
+    if level is not None:
+        color = "#2E7D32" if level > 0.4 else "#F9A825" if level >= LOW_BATTERY else "#D32F2F"
+        canvas.create_rectangle(6, 6, 6 + 46 * level, 26, fill=color, outline="")
 
 
 def cloud_usage_text(usage, period, language="et"):
@@ -466,6 +492,30 @@ class ChestDisplayApp:
         self.button(self.tr('QR-kood'), self.show_webapp_qr, relx=1, x=-20, y=85, anchor="ne",
                     width=190, height=55)
         self.button(self.tr('← Tagasi'), self.show_display, x=20, y=20, width=145, height=55)
+        icon = self.add(tk.Canvas(self.root, width=64, height=32, bg=BACKGROUND_COLOR,
+                                  highlightthickness=0))
+        icon.place(x=20, y=96, anchor="nw")
+        battery = self.add(tk.Label(self.root, text="", font=("Arial", 18, "bold"), bg=BACKGROUND_COLOR))
+        battery.place(x=92, y=95, anchor="nw")
+        warning = self.add(tk.Label(self.root, text="", font=("Arial", 20, "bold"), bg="#D32F2F", fg="white"))
+        token = self.view_token
+
+        def refresh():
+            if token != self.view_token:
+                return
+            now = time.monotonic()
+            level = battery_level(self.ros.battery, now)
+            text = battery_text(self.ros.battery, now)
+            battery.config(text=self.tr('Aku: {v0}', v0=text))
+            draw_battery_icon(icon, level)
+            if level is not None and level < LOW_BATTERY:
+                warning.config(text="⚠  " + self.tr('Aku on tühjenemas ({v0}) — pane robot laadima!', v0=text))
+                warning.place(relx=0, rely=1, relwidth=1, height=56, anchor="sw")
+            else:
+                warning.place_forget()
+            self.root.after(1000, refresh)
+
+        refresh()
         buttons = (
             (self.tr('Muuda ekraani pilti'), self.show_gallery),
             (self.tr('Muuda näo taustavärvi'), self.show_face_colors),

@@ -142,6 +142,8 @@ ENGLISH = {
     "Sa võitsid!": "You won!", "Robot võitis!": "Robot won!", "Viik!": "Draw!", "Uus mäng": "New game",
     "Raskus: {v0}": "Level: {v0}", "Lihtne": "Easy", "Raske": "Hard",
     "Robot {v0} · Sina {v1} · Viik {v2}": "Robot {v0} · You {v1} · Draws {v2}",
+    "Aku: {v0}": "Battery: {v0}",
+    "Aku on tühjenemas ({v0}) — pane robot laadima!": "Battery is low ({v0}) — charge the robot!",
     "QR-kood": "QR code", "Veebirakendus": "Web app",
     "Robotil pole IP-aadressi (pole võrgus?)": "The robot has no IP address (not on a network?)",
     "QR-koodi jaoks paigalda python3-qrcode": "Install python3-qrcode for the QR code",

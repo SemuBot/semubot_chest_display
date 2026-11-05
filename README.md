@@ -290,6 +290,7 @@ or the setting silently does nothing.
 | `/semubot/conversation_log_clear` | `Empty` | publishes | `semubot_brain` |
 | `/semubot/cloud_usage` | `String` JSON, latched | subscribes | published by `semubot_brain` |
 | `/semubot/state` | `String` JSON `{"stage", "mode", "since"}`, latched | subscribes | published by `semubot_brain`; also read by `semubot_eyes` |
+| `/semubot/battery` | `sensor_msgs/BatteryState`, 2 Hz | subscribes (admin menu) | Pi: `semubot_raspberry_bringup` (`battery_monitor.py`, INA260); also read by the webapp |
 
 `semubot_brain` and `semubot_eyes` are in `~/Speech_Recogniton_ws` on the NUC; the webapp talks
 through rosbridge.

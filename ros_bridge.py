@@ -21,6 +21,7 @@ CONVERSATION_LOG_CLEAR_TOPIC = "/semubot/conversation_log_clear"
 CLOUD_USAGE_TOPIC = "/semubot/cloud_usage"  # JSON {"today": {...}, "month": {...}, ...}
 ROBOT_STATE_TOPIC = "/semubot/state"  # JSON {"stage", "mode", "since"}, latched
 SPEED_SCALE_TOPIC = "/semubot/speed_scale"  # Float32 0.1-1.0, latched, multiplies /cmd_vel on the Pi
+BATTERY_TOPIC = "/semubot/battery"  # BatteryState from the Pi's battery_monitor, 2 Hz, not latched
 SPEECH_INPUT_TOPIC = "/speech_input"  # text the robot says out loud
 ROS_RETRY_SECONDS = 5  # How often to retry connecting to ROS 2 after a failure
 
@@ -45,6 +46,7 @@ class RobotRos:
         self.conversation_log = None  # Raw JSON text of the brain node's conversation log
         self.cloud_usage = None  # {"today": {...}, "month": {...}, "model", "priced"}
         self.robot_state = None  # {"stage", "mode", "since"} reported by the brain node
+        self.battery = None  # (percentage 0-1 or NaN, voltage, time.monotonic()) from the Pi
         self.closed = False
         self._connect()
         if self.node is None:
@@ -64,6 +66,7 @@ class RobotRos:
             from rclpy.executors import SingleThreadedExecutor
             from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
             from rclpy.signals import SignalHandlerOptions
+            from sensor_msgs.msg import BatteryState
             from std_msgs.msg import Empty, Float32, Float32MultiArray, String
 
             # The Tk app handles SIGINT/SIGTERM itself (see start_gui).
@@ -89,6 +92,8 @@ class RobotRos:
             node.create_subscription(String, CONVERSATION_LOG_TOPIC, self._conversation_log, qos)
             node.create_subscription(String, CLOUD_USAGE_TOPIC, self._cloud_usage, qos)
             node.create_subscription(String, ROBOT_STATE_TOPIC, self._robot_state, qos)
+            # Depth 10, not the latched qos: a latched subscriber gets nothing from a volatile publisher
+            node.create_subscription(BatteryState, BATTERY_TOPIC, self._battery, 10)
             self.executor = SingleThreadedExecutor()
             self.executor.add_node(node)
             self.spin_thread = threading.Thread(target=self._spin, daemon=True)
@@ -150,6 +155,9 @@ class RobotRos:
             return
         if isinstance(state, dict):
             self.robot_state = state
+
+    def _battery(self, message):
+        self.battery = (message.percentage, message.voltage, time.monotonic())
 
     def clear_conversation_log(self):
         if self.node is None:

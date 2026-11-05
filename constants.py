@@ -22,3 +22,6 @@ LOGO_PATH = "images/logos/Logo.PNG"
 
 # Port of the webapp (repo semubot_webapp, uvicorn in app/main.py), shown as a QR code in the admin menu
 WEBAPP_PORT = 8000
+
+# Below this charge (0-1) the admin menu shows a red "charge the robot" bar; 10 % is ~23.8 V on the 7S pack
+LOW_BATTERY = 0.10

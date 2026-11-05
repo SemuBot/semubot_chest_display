@@ -41,6 +41,7 @@ def test_menu_language():
                      'month': {'requests': 2, 'unpriced': 2}}
     ros.conversation_log = '[]'
     ros.robot_state = {'stage': 'thinking', 'mode': 'local'}
+    ros.battery = None
     ros.vad_threshold = 1000
     ros.recent_levels.return_value = []
     with tempfile.TemporaryDirectory() as directory:
@@ -122,6 +123,11 @@ def test_menu_language():
             button(root, 'Eesti').invoke()
             assert app.language == 'et' and 'Admin menüü' in texts(root)
             assert 'Heli seaded' in texts(root)
+            assert not any('tühjenemas' in text for text in texts(root))
+            ros.battery = (0.05, 23.5, time.monotonic())
+            app.show_admin()
+            assert '⚠  Aku on tühjenemas (5 % · 23.5 V) — pane robot laadima!' in texts(root)
+            ros.battery = None
             app.close()
             root = tk.Tk()
             root.withdraw()
@@ -142,6 +148,13 @@ def test_menu_language():
                 assert restarted.language == 'en'
                 error.assert_called_once()
             restarted.close()
+    assert ui.battery_text(None, 0) == '—'
+    assert ui.battery_text((0.76, 26.84, 100), 105) == '76 % · 26.8 V'
+    assert ui.battery_text((float('nan'), 26.84, 100), 105) == '26.8 V'
+    assert ui.battery_text((0.76, 26.84, 100), 111) == '—'  # stale
+    assert ui.battery_level((0.05, 23.5, 100), 105) == 0.05
+    assert ui.battery_level((float('nan'), 23.5, 100), 105) is None
+    assert ui.battery_level((0.05, 23.5, 100), 111) is None  # stale: no warning from old data
     assert '1 request, 16 tokens' in ui.cloud_usage_text(ros.cloud_usage, 'today', 'en')
     assert '2 requests' in ui.cloud_usage_text(ros.cloud_usage, 'month', 'en')
     assert '1 päring, 16 sõnet' in ui.cloud_usage_text(ros.cloud_usage, 'today')
