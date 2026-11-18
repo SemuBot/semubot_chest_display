@@ -29,8 +29,10 @@ sudo apt install python3-tk python3-pil.imagetk python3-qrcode
 It sets up:
 
 - **`semubot-chest-display.service`**, a systemd user service that starts with the desktop session
-  and restarts the app if it crashes. It runs `deploy/start.sh`, which sources ROS 2 Jazzy with
-  SemuBot's domain (`ROS_DOMAIN_ID=5`, CycloneDDS from `~/cyclonedds.xml`) and starts `main.py`.
+  and restarts the app if it crashes. It runs `deploy/start.sh`, which sources ROS 2 Jazzy, loads
+  `~/.config/semubot/semubot.env` and `chest_display.env` when they exist (domain 5 and CycloneDDS
+  from `~/cyclonedds.xml` otherwise) and starts `main.py`. On a robot installed from
+  `semubot-software` the unit of the same name there replaces this one and adds the robot profile.
   Restart it with `systemctl --user restart semubot-chest-display`; read its log with
   `journalctl --user -u semubot-chest-display -f`.
 - **`~/.config/semubot/chest_display.env`**, only if it does not exist yet, from
@@ -277,7 +279,7 @@ or the setting silently does nothing.
 | Topic | Type | Chest display | Other end |
 |---|---|---|---|
 | `/face/background_color` | `String` `#RRGGBB`, latched | publishes | `semubot_eyes` (`eye_controller.py`) |
-| `/semubot/speed_scale` | `Float32` 0.1–1.0, latched | publishes | Pi: `semubot_raspberry_bringup` (`cmd_vel_motor_driver.py`), multiplies `/cmd_vel` |
+| `/semubot/speed_scale` | `Float32`, range and step from the robot profile (`semubot_chest_display` section of the profile in `semubot_bringup`, default 0.1–1.0 in 0.1 steps), latched | publishes | Pi: `semubot_raspberry_bringup` (`cmd_vel_motor_driver.py`), multiplies `/cmd_vel` |
 | `/semubot/mode` | `String` `manual`/`local`/`cloud` | publishes | `semubot_brain` (`llm_controller.py`); also the webapp |
 | `/semubot/mode_state` | `String`, latched | subscribes | published by `semubot_brain`; also read by the webapp |
 | `/speech_input` | `String` | publishes (text to say) | `semubot_brain`; also the webapp |

@@ -160,12 +160,37 @@ def selected_face_color():
     return DEFAULT_FACE_COLOR
 
 
+# Speed scale range offered in the admin menu, from the robot profile (semubot_bringup, config/profiles) when
+# SEMUBOT_PROFILE_FILE names one; the chosen value is kept in the settings file.
+SPEED_SCALE = {"min": 0.1, "max": 1.0, "step": 0.1, "default": 1.0}
+
+
+def load_profile_speed_scale(path=os.environ.get("SEMUBOT_PROFILE_FILE", "")):
+    try:
+        import yaml
+        with open(path, encoding="utf-8") as profile_file:
+            section = (yaml.safe_load(profile_file) or {}).get("semubot_chest_display") or {}
+    except (OSError, ImportError, ValueError):
+        return
+    values = section.get("ros__parameters") or {}
+    for key in SPEED_SCALE:
+        if f"speed_scale_{key}" in values:
+            SPEED_SCALE[key] = float(values[f"speed_scale_{key}"])
+
+
+load_profile_speed_scale()
+
+
+def clamp_speed_scale(scale):
+    return min(max(round(scale, 1), SPEED_SCALE["min"]), SPEED_SCALE["max"])
+
+
 def selected_speed_scale():
     try:
-        scale = float(load_settings().get("speed_scale", 1.0))
+        scale = float(load_settings().get("speed_scale", SPEED_SCALE["default"]))
     except (TypeError, ValueError):
-        return 1.0
-    return min(max(round(scale, 1), 0.1), 1.0)
+        return SPEED_SCALE["default"]
+    return clamp_speed_scale(scale)
 
 
 def available_images(category=None):
@@ -557,7 +582,7 @@ class ChestDisplayApp:
         self.run_background(network.ipv4_addresses, found)
 
     def show_speed(self):
-        """Scale the wheelbase's /cmd_vel speed in 0.1 steps between 0.1 and 1.0."""
+        """Scale the wheelbase's /cmd_vel speed within the range the robot profile allows."""
         self.clear()
         self.title(self.tr('Sõidukiirus'))
         self.button(self.tr('← Tagasi'), self.show_admin, x=20, y=20, width=145, height=55)
@@ -569,7 +594,7 @@ class ChestDisplayApp:
         status.place(relx=0.5, rely=0.72, anchor="center")
 
         def change(step):
-            scale = min(max(round(selected_speed_scale() + step, 1), 0.1), 1.0)
+            scale = clamp_speed_scale(selected_speed_scale() + step)
             try:
                 save_setting("speed_scale", scale)
             except OSError as error:
@@ -579,15 +604,15 @@ class ChestDisplayApp:
 
         def show(scale, sent):
             value.config(text=f"{scale:.1f}")
-            minus.config(state="disabled" if scale <= 0.1 else "normal")
-            plus.config(state="disabled" if scale >= 1.0 else "normal")
+            minus.config(state="disabled" if scale <= SPEED_SCALE["min"] else "normal")
+            plus.config(state="disabled" if scale >= SPEED_SCALE["max"] else "normal")
             status.config(text=self.tr('Saadetud robotile') if sent
                           else self.tr('ROS 2 pole saadaval: {v0}', v0=self.ros.error))
 
-        minus = self.button("−", lambda: change(-0.1), relx=0.25, rely=0.45, anchor="center",
-                            width=130, height=130)
-        plus = self.button("+", lambda: change(0.1), relx=0.75, rely=0.45, anchor="center",
-                           width=130, height=130)
+        minus = self.button("−", lambda: change(-SPEED_SCALE["step"]), relx=0.25, rely=0.45,
+                            anchor="center", width=130, height=130)
+        plus = self.button("+", lambda: change(SPEED_SCALE["step"]), relx=0.75, rely=0.45,
+                           anchor="center", width=130, height=130)
         for button in (minus, plus):
             button.config(font=("Arial", 48, "bold"))
         show(selected_speed_scale(), self.ros.node is not None)
