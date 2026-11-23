@@ -1,0 +1,17 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    container: ros:jazzy-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb python3-tk python3-pil.imagetk python3-qrcode python3-yaml python3-pytest
+      - run: |
+          . /opt/ros/jazzy/setup.sh
+          xvfb-run -a python3 -m pytest tests -p no:cacheprovider
